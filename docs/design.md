@@ -1,0 +1,7 @@
+# Visual system
+
+Built-in ImageGen concept: design-concept.png. Original literary game, pale paper #f5f6f0; charcoal #293329; muted #858a80; green #536b50; borders #dfe3d9; orange #d68c57. No image overlay. Chinese serif headings (Noto Serif SC/Songti SC fallback) with restrained sans UI, large32..40px year headline,14px story text1.9 line-height,11px helper text. Three open columns divided by vertical rules; left biography/stats/focus/timeline, center story scene/choices/history, right people/world dialogue/intelligence. Header brand/navigation/settings/new life. Signature motifs: thin branch mark, serif year, circle choice letters, quiet relationship progress, cinematic painted river scene. Controls use8px radius, thin strokes, focus outlines, no heavy shadows outside dialogs.
+
+Required feature surfaces share these tokens: relationships pane with character memories, chat drawer/dialog, time branch list with historical snapshot forks, setup form with era/custom year and start age, settings with actual DeepSeek status and session access token, import/export saved game. Mobile one column with horizontal status strip and tab navigation. Motion160..240ms fade, prefers-reduced-motion honored.
+
+Concept text maps to actual generated game state. Intentional functional deviations: changing years and narrative text reflect runtime state; no fake date or saved timestamp; seed biography stores only events truly played. NPC monograms match Person.name. No adult thematic interaction for children. Complete local mode and explicit DeepSeek connection status.
