@@ -18,21 +18,6 @@
 .foundation-toggle strong { display: block; font-size: 13px; font-weight: 600; }
 .foundation-toggle small { display: block; color: var(--muted); font-size: 11px; line-height: 1.7; margin-top: 4px; }
 
-.birth-welcome { width: calc(100% - 40px); max-width: 1050px; margin: 0 auto; padding: 20px 0 36px; }
-.welcome-intro { margin-bottom: 20px; }
-.welcome-masthead { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 4px 0 15px; border-bottom: 1px solid var(--line); }
-.welcome-masthead > span { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
-.welcome-masthead > span svg { color: var(--accent); }
-.welcome-hero { display: grid; grid-template-columns: 1fr 1fr; align-items: center; gap: 30px; padding: 24px 0 20px; }
-.welcome-hero h1 { color: var(--accent); font-size: 36px; line-height: 1.3; letter-spacing: .02em; }
-.welcome-poem { margin-top: 9px; font-size: 19px; font-weight: 600; line-height: 1.65; }
-.welcome-description { font-size: 13px; line-height: 1.9; color: var(--muted); margin-top: 12px; }
-.welcome-pixel-preview { border: 1px solid var(--line-strong); border-radius: 4px; background: var(--panel); overflow: hidden; }
-.welcome-pixel-preview .pixel-scene { margin: 0; }
-.welcome-features { display: flex; align-items: center; gap: 24px; padding: 13px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.welcome-features > span { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
-.welcome-features svg { color: var(--teal); }
-.birth-setup { padding: 23px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 .world-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .world-options button { border: 1px solid var(--line-strong); border-radius: 3px; background: var(--surface); text-align: left; padding: 11px 12px; }
 .world-options button > span { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 600; }
@@ -43,28 +28,9 @@
 .segmented-control button { flex: 1; background: var(--surface); padding: 9px 10px; font-size: 13px; white-space: nowrap; }
 .segmented-control button + button { border-left: 1px solid var(--line-strong); }
 .segmented-control button.selected { color: var(--teal); background: var(--green-soft); font-weight: 600; }
-.welcome-preferences { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 22px; padding: 18px 0; }
 .intelligence-label > span { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .intelligence-label output { color: var(--teal); font: 13px var(--mono); }
 .intelligence-label input { margin: 5px 0; }
-.foundation-advanced { margin-top: 18px; }
-.foundation-advanced summary { font-size: 13px; cursor: pointer; color: var(--teal); }
-.foundation-advanced > .foundation-toggle { margin-top: 16px; }
-.foundation-advanced .foundation-form-grid { margin-top: 14px; }
-.birth-submit { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
-.birth-submit p { font-size: 14px; font-weight: 600; }
-.birth-submit small { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.7; }
-.birth-submit > div:last-child { display: flex; gap: 10px; }
-.birth-submit .primary-button { min-width: 110px; }
-.birth-odds { display: grid; grid-template-columns: 240px 1fr; gap: 15px 26px; margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
-.birth-odds h2 { font-size: 19px; }
-.birth-odds > div > p:last-child { font-size: 12px; color: var(--muted); line-height: 1.7; margin-top: 7px; }
-.birth-odds ol { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 20px; margin: 0; padding: 0; list-style: none; }
-.birth-odds li { display: flex; align-items: center; gap: 9px; position: relative; padding: 0 0 10px; font-size: 12px; }
-.birth-odds li i { position: absolute; height: 3px; left: 0; bottom: 0; background: var(--teal); max-width: 100%; opacity: .55; }
-.birth-odds li strong { margin-left: auto; font: 12px var(--mono); }
-.odds-rank { color: var(--muted); font: 11px var(--mono); }
-.birth-odds .foundation-source { grid-column: 1 / -1; margin-top: 2px; }
 
 /* Birth identity, country comparison, and first steps. */
 .certificate-page { width: calc(100% - 40px); max-width: 840px; margin: 22px auto 40px; }
@@ -280,9 +246,6 @@
 .life-ending cite { display: block; margin-top: 9px; color: var(--muted); font-size: 11px; font-style: normal; }
 .ending-note { font-size: 12px; line-height: 1.8; color: var(--muted); }
 .ending-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 9px; margin-top: 22px; }
-.modal .birth-welcome { width: 100%; padding: 0; }
-.modal .welcome-intro, .modal .birth-odds { display: none; }
-.modal .birth-setup { border: 0; padding: 0; background: transparent; }
 .modal .world-options { grid-template-columns: 1fr 1fr; }
 .pixel-person-hotspot { border: 0; border-radius: 0; background: transparent; }
 .pixel-person-hotspot:hover { background: #ffffff18; }
@@ -295,8 +258,6 @@
   .toolbar-identity > strong { font-size: 35px; }
   .clock-state { display: none; }
   .time-toolbar .toolbar-actions { margin-left: auto; }
-  .welcome-hero { gap: 22px; }
-  .welcome-hero h1 { font-size: 32px; }
 }
 
 @media (max-width: 800px) {
@@ -308,21 +269,10 @@
   .time-toolbar > .secondary-button { margin-left: auto; }
   .toolbar-actions { margin-left: 0; }
   .time-toolbar .auto-toggle { margin-right: auto; }
-  .birth-welcome { width: calc(100% - 32px); padding-top: 16px; }
-  .welcome-hero { grid-template-columns: 1fr; padding: 20px 0 17px; gap: 18px; }
-  .welcome-hero-copy { max-width: 620px; }
-  .welcome-pixel-preview { width: 100%; }
-  .welcome-poem { font-size: 18px; }
-  .welcome-features { gap: 16px; justify-content: space-between; }
-  .welcome-features > span { font-size: 11px; line-height: 1.7; }
-  .birth-setup { padding: 20px; }
-  .birth-odds { grid-template-columns: 1fr; }
   .birth-environment { grid-template-columns: 1fr 1fr; gap: 18px; }
   .certificate-peers > div { grid-template-columns: 1fr 1fr; gap: 18px; }
   .certificate-start { align-items: stretch; flex-direction: column; gap: 15px; }
   .certificate-start > div { justify-content: flex-end; }
-  .birth-submit { align-items: stretch; flex-direction: column; gap: 15px; }
-  .birth-submit > div:last-child { justify-content: flex-end; }
 }
 
 @media (max-width: 480px) {
@@ -339,18 +289,6 @@
   .auto-toggle { font-size: 11px; gap: 3px; }
   .toolbar-actions, .toolbar-nav { gap: 3px; }
   .time-toolbar > .text-button { font-size: 11px; }
-  .birth-welcome { width: calc(100% - 20px); padding: 10px 0 25px; }
-  .welcome-masthead { gap: 8px; padding-bottom: 12px; }
-  .welcome-masthead > span { font-size: 11px; }
-  .welcome-masthead .text-button { font-size: 11px; }
-  .welcome-hero { padding: 17px 0; gap: 16px; }
-  .welcome-hero h1 { font-size: 29px; }
-  .welcome-poem { font-size: 17px; }
-  .welcome-description { font-size: 13px; }
-  .welcome-features { gap: 10px; align-items: flex-start; }
-  .welcome-features > span { flex: 1; align-items: flex-start; gap: 5px; }
-  .welcome-features svg { width: 14px; margin-top: 2px; }
-  .birth-setup, .birth-odds { padding: 15px; }
   .foundation-section-title { gap: 10px; align-items: flex-start; }
   .foundation-section-title h2 { font-size: 20px; }
   .foundation-section-title > span { font-size: 11px; }
@@ -358,13 +296,6 @@
   .world-options button { padding: 10px; }
   .world-options button > span { font-size: 14px; }
   .foundation-form-grid, .foundation-choice-grid { grid-template-columns: 1fr; gap: 16px; margin-top: 18px; }
-  .welcome-preferences { grid-template-columns: 1fr; gap: 18px; }
-  .birth-submit > div:last-child { justify-content: stretch; }
-  .birth-submit button { flex: 1; }
-  .birth-odds { margin-top: 14px; }
-  .birth-odds ol { gap: 10px 16px; }
-  .birth-odds li { gap: 6px; }
-  .birth-odds li strong { font-size: 11px; }
   .certificate-page { width: calc(100% - 20px); margin-top: 14px; }
   .birth-certificate { padding: 16px; }
   .certificate-top h1 { font-size: 24px; }

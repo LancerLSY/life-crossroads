@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import type { FormEvent, ReactNode } from 'react'
-import { ArrowRight, BookOpen, Leaf, Settings2, Shuffle, Sparkles } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { ArrowRight, BookOpen, Leaf, Sparkles } from 'lucide-react'
 import type { GameState } from '../game/types.ts'
 import PixelScene from './PixelScene'
 import PixelPortrait from './PixelPortrait'
 import { COUNTRIES, COUNTRY_DATA_METADATA, countryAt, countryById } from '../simulation/countries.ts'
 import { secondsPerYear, survivalAt } from '../simulation/core.ts'
-import type { FoundationConfig, InvestmentPolicy, Simulation, World } from '../simulation/types.ts'
+import type { InvestmentPolicy, Simulation, World } from '../simulation/types.ts'
 
 export type SpendAction = 'health' | 'travel' | 'social' | 'study' | 'home' | 'repay' | 'invest'
 
@@ -24,75 +24,6 @@ function CountryOptions({ emptyLabel }: { emptyLabel?: string }) {
 
 function DataFootnote({ children }: { children?: ReactNode }) {
   return <p className="foundation-source">{children ?? <>国家与地区参数来自 World Bank WDI 与补充官方数据（{COUNTRY_DATA_METADATA.baselineYear}基准）；缺失值、历史插值与未来变化采用明示的游戏模型。</>}</p>
-}
-
-export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume }: {
-  onCreate: (config: Partial<FoundationConfig>) => void
-  onSettings: () => void
-  hasSaved: boolean
-  onResume: () => void
-}) {
-  const currentYear = new Date().getFullYear()
-  const [world, setWorld] = useState<World | 'any'>('present')
-  const [birthYear, setBirthYear] = useState(currentYear)
-  const [drawMode, setDrawMode] = useState<FoundationConfig['drawMode']>('birth')
-  const [paceMinutes, setPace] = useState<FoundationConfig['paceMinutes']>(60)
-  const [homeCountryId, setHomeCountry] = useState('')
-  const [softMode, setSoftMode] = useState(true)
-  const [intelligence, setIntelligence] = useState(60)
-  const [customBirth, setCustomBirth] = useState(false)
-  const [countryId, setCountry] = useState('')
-  const [name, setName] = useState('')
-  const previewWorld = world === 'any' ? 'present' : world
-  const previewYear = world === 'present' || world === 'any' ? currentYear : birthYear
-  const odds = useMemo(() => {
-    const field = drawMode === 'birth' ? 'births' : 'population'
-    const countries = COUNTRIES.map(country => countryAt(country.id, previewYear, previewWorld))
-    const total = countries.reduce((sum, country) => sum + country[field], 0)
-    return countries.sort((a, b) => b[field] - a[field]).slice(0, 6).map(country => ({ ...country, share: country[field] / total }))
-  }, [drawMode, previewYear, previewWorld])
-
-  function chooseWorld(next: World | 'any') {
-    setWorld(next)
-    setBirthYear(next === 'past' ? 1980 : next === 'future' ? Math.min(2100, currentYear + 24) : currentYear)
-  }
-
-  function create(event: FormEvent) {
-    event.preventDefault()
-    const random = globalThis.crypto?.getRandomValues(new Uint32Array(1))[0] ?? Math.floor(Math.random() * 4294967296)
-    const year = world === 'any' ? 1950 + random % 151 : world === 'present' ? currentYear : birthYear
-    const selectedWorld: World = world === 'any' ? year < currentYear ? 'past' : year > currentYear ? 'future' : 'present' : world
-    onCreate({ world: selectedWorld, birthYear: year, drawMode, paceMinutes, softMode, intelligence,
-      ...(homeCountryId ? { homeCountryId } : {}),
-      ...(customBirth && countryId ? { countryId } : {}),
-      ...(customBirth && name.trim() ? { name: name.trim() } : {}),
-    })
-  }
-
-  return <main className="birth-welcome">
-    <section className="welcome-intro">
-      <div className="welcome-masthead"><span>172 个国家与地区 · 从 0 岁开始</span><button className="text-button" onClick={onSettings}><Settings2 size={15} /> 模型与设置</button></div>
-      <div className="welcome-hero"><div className="welcome-hero-copy"><h1>人生岔路</h1><p className="welcome-poem">如果出生可以重来，<br />世界会把你带向哪里？</p><p className="welcome-description">按真实世界的人口与出生分布，随机成为 {COUNTRIES.length} 个国家与地区中的一个新生命。出生环境先于选择到来，此后每一年，学习、工作、相遇与告别，都将写下不同的轨迹。</p></div><div className="welcome-pixel-preview"><PixelScene showCaption={false}/><p>此刻，一段新的人生正要开始。</p></div></div>
-
-    </section>
-
-    <form className="birth-setup" onSubmit={create}>
-      <div className="foundation-section-title"><div><h2>先选一个世界</h2></div><span>其余的，交给人生。</span></div>
-      <fieldset className="foundation-fieldset"><legend>世界时间线</legend><div className="world-options">{([
-        ['past', '过去', '历史条件随年份演变'], ['present', '当下', '以当代生活条件为基准'], ['future', '未来', '探索一个可能的世界'], ['any', '任意年代', '随机落在 1950—2100 年'],
-      ] as const).map(([value, title, subtitle]) => <button key={value} type="button" className={world === value ? 'selected' : ''} aria-pressed={world === value} onClick={() => chooseWorld(value)}><span>{value === 'any' ? <Shuffle size={16} /> : null}{title}</span><small>{subtitle}</small></button>)}</div></fieldset>
-      <div className="foundation-form-grid">
-        <label className="foundation-label">出生年份<input type="number" min={world === 'future' ? currentYear + 1 : 1950} max={world === 'past' ? currentYear - 1 : 2100} required value={birthYear} disabled={world === 'present' || world === 'any'} onChange={event => setBirthYear(Number(event.target.value))} /><small>{world === 'any' ? '出生时随机决定年份' : world === 'present' ? `从 ${currentYear} 年开始，当代条件保持为基准` : '历史与未来会改变生活条件'}</small></label>
-        <label className="foundation-label">我的国家 / 地区（可选）<select value={homeCountryId} onChange={event => setHomeCountry(event.target.value)}><CountryOptions emptyLabel="不设置对照" /></select><small>用于比较你的出生地与熟悉的生活环境</small></label>
-      </div>
-      <div className="foundation-form-grid foundation-choice-grid"><fieldset className="foundation-fieldset"><legend>如何抽取出生地</legend><div className="segmented-control">{([['birth', '按出生人数'], ['population', '按总人口']] as const).map(([value, label]) => <button key={value} type="button" className={drawMode === value ? 'selected' : ''} aria-pressed={drawMode === value} onClick={() => setDrawMode(value)}>{label}</button>)}</div><p className="foundation-help">{drawMode === 'birth' ? '每个新生儿的机会相同，更容易出生在新生儿较多的地方。' : '每位居民的权重相同，按各地总人口抽取。'}</p></fieldset><fieldset className="foundation-fieldset"><legend>一生的节奏</legend><div className="segmented-control">{([30, 60, 90] as const).map(value => <button key={value} type="button" className={paceMinutes === value ? 'selected' : ''} aria-pressed={paceMinutes === value} onClick={() => setPace(value)}>{value} 分钟</button>)}</div><p className="foundation-help">估算的自动播放时长；随时可以暂停、加速，或快转至下一个抉择。</p></fieldset></div>
-      <div className="welcome-preferences"><label className="foundation-toggle"><input type="checkbox" checked={softMode} onChange={event => setSoftMode(event.target.checked)} /><span><strong>温柔模式</strong><small>降低极端不幸事件的冲击，仍保留人生的变化。</small></span></label><label className="foundation-label intelligence-label"><span>世界智能 <output>{intelligence}</output></span><input type="range" min={0} max={100} step={5} value={intelligence} onChange={event => setIntelligence(Number(event.target.value))} /><small>越高，模型参与事件和人物互动的程度越高。</small></label></div>
-      <details className="foundation-advanced"><summary>自定出生信息</summary><label className="foundation-toggle"><input type="checkbox" checked={customBirth} onChange={event => setCustomBirth(event.target.checked)} /><span>为这次人生指定姓名或出生地</span></label><div className="foundation-form-grid"><label className="foundation-label">姓名<input maxLength={40} placeholder="留空，由世界随机取名" value={name} disabled={!customBirth} onChange={event => setName(event.target.value)} /></label><label className="foundation-label">出生国家 / 地区<select disabled={!customBirth} value={countryId} onChange={event => setCountry(event.target.value)}><CountryOptions emptyLabel="按所选概率随机出生" /></select></label></div><p className="foundation-help">默认随机决定姓名、性别、城乡与家庭条件；指定出生地时不再按全球权重抽取。</p></details>
-      <div className="birth-submit"><div><p>下一页，认识刚刚出生的你。</p><small>进度保存在这台设备，人生轨迹随选择与相遇展开。</small></div><div>{hasSaved ? <button type="button" className="secondary-button" onClick={onResume}>继续上次人生</button> : null}<button className="primary-button" type="submit">出生 <ArrowRight size={17} /></button></div></div>
-    </form>
-
-    <aside className="birth-odds"><div><h2>{drawMode === 'birth' ? '最可能的出生地' : '人口最多的出生地'}</h2><p>{world === 'any' ? '以下预览当代权重，出生时按抽中的年代重新计算。' : `${previewYear} 年 · ${drawMode === 'birth' ? '按年度出生人数' : '按总人口'}加权`}</p></div><ol>{odds.map((country, index) => <li key={country.id}><span className="odds-rank">0{index + 1}</span><span>{country.name}</span><i style={{ width: `${country.share / odds[0]!.share * 100}%` }} /><strong>{percentage(country.share)}</strong></li>)}</ol><DataFootnote>抽样在支持的 {COUNTRIES.length} 个国家与地区内归一化；出生人数由 WDI 人口与出生率推算。历史使用插值，未来使用游戏情景；这些比例会随时间线而改变。</DataFootnote></aside>
-  </main>
 }
 
 function BirthComparison({ simulation }: { simulation: Simulation }) {

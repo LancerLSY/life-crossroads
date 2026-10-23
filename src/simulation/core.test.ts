@@ -46,6 +46,22 @@ test('newborn identity, parents, four independent peers and complete serializabl
   assert.deepEqual(createSimulation({ seed: 918, countryId: 'IND', birthYear: 2000 }), result)
 })
 
+test('Yemen and supported Arabic naming regions give newborns and parents deterministic local names', () => {
+  const localName = /^(Layla|Amina|Noor|Fatima|Omar|Ali|Yusuf|Amir) (Hassan|Khan|Ibrahim|Karim)$/
+  for (const countryId of ['YEM', 'OMN', 'ARE', 'QAT', 'KWT', 'BHR', 'LBN', 'SYR', 'PSE', 'LBY', 'MRT']) {
+    assert.ok(COUNTRIES.some(country => country.id === countryId))
+    const config = { seed: 918, countryId, birthYear: 2000 }
+    const result = createSimulation(config)
+    assert.equal(result.simulation.birth.countryId, countryId)
+    assert.match(result.state.config.name, localName)
+    for (const id of ['mother', 'father'] as const) {
+      assert.match(result.simulation.birth.parents[id].name, localName)
+      assert.equal(result.state.people.find(person => person.id === id)?.name, result.simulation.birth.parents[id].name)
+    }
+    assert.deepEqual(createSimulation(config), result)
+  }
+})
+
 test('sampling changes with draw mode; duration changes pacing and never death randomness', () => {
   let differences = 0
   const regions = new Set<string>()

@@ -216,8 +216,7 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .decision-top { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; color: var(--muted); font-size: 11px; }
 .decision-label { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); background: var(--accent-soft); padding: 4px 7px; border-radius: 2px; font-weight: 600; }
 .decision-top > .text-button { margin-left: auto; font-size: 11px; }
-.decision-confirm { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 14px; margin-top: 14px; border-top: 1px solid var(--line); }
-.decision-confirm > span, .muted { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.muted { color: var(--muted); font-size: 12px; line-height: 1.7; }
 .event-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .event-heading > svg { color: var(--accent); width: 18px; height: 18px; }
 .event-heading h2 { font-size: 19px; line-height: 1.5; }
@@ -225,11 +224,8 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .narrative { color: var(--ink); font-size: 14px; line-height: 1.9; white-space: pre-line; overflow-wrap: anywhere; }
 .choices { display: flex; flex-direction: column; gap: 9px; margin-top: 16px; }
 .choice { display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 11px 12px; border: 1px solid var(--line-strong); border-radius: 3px; text-align: left; background: var(--surface); }
-.choice:hover:not(:disabled), .choice.selected { border-color: var(--teal); background: var(--green-soft); }
-.choice.selected { box-shadow: inset 3px 0 var(--teal); }
+.choice:hover:not(:disabled) { border-color: var(--teal); background: var(--green-soft); }
 .choice-letter { display: grid; place-items: center; flex-shrink: 0; width: 27px; height: 27px; border: 1px solid var(--line-strong); border-radius: 2px; font: 13px var(--mono); }
-.choice.selected .choice-letter { background: var(--teal); color: #fff; border-color: var(--teal); }
-:root[data-theme="dark"] .choice.selected .choice-letter { color: #142c24; }
 .choice-copy { display: flex; flex-direction: column; min-width: 0; gap: 5px; }
 .choice-copy strong { font-size: 14px; line-height: 1.5; font-weight: 600; }
 .choice-copy small { font-size: 12px; line-height: 1.65; color: var(--muted); }
@@ -238,7 +234,6 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .next-year-note { min-width: 0; }
 .next-year-note strong { font-size: 12px; font-weight: 500; }
 .next-year-note p { font-size: 11px; line-height: 1.6; color: var(--muted); margin-top: 4px; }
-.advance-button { min-width: 112px; }
 .story-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 11px; }
 .story-bottom > span { display: inline-flex; align-items: center; gap: 5px; line-height: 1.5; }
 .status-dot { display: inline-block; width: 6px; height: 6px; background: var(--gold); }

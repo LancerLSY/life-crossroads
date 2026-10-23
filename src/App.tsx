@@ -7,11 +7,13 @@ import Modal from './components/Modal';
 import SavePanel from './components/SavePanel';
 import type { ImportMode } from './components/SavePanel';
 import { ChatPanel, HistoryPanel, Relationships, Timelines } from './components/Panels';
-import { BirthWelcome, BirthCertificate, SimulationDashboard, LifeEconomy, Reflection, LifeEnding } from './components/FoundationViews';
+import { BirthCertificate, SimulationDashboard, LifeEconomy, Reflection, LifeEnding } from './components/FoundationViews';
+import { BirthWelcome, BirthReveal } from './components/BirthDraw';
+import { createBirthDraw } from './simulation/birthDraw.ts';
 import type { SpendAction } from './components/FoundationViews';
 import { applyGeneratedEvent, interact, setFocus, setIntelligence } from './game/engine.ts';
 import type { Focus, GameState } from './game/types.ts';
-import { advanceSimulation, createSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend } from './simulation/core.ts';
+import { advanceSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend } from './simulation/core.ts';
 import type { FoundationConfig, InvestmentPolicy, Simulation } from './simulation/types.ts';
 import { downloadSave, forkBranch, loadSave, MAX_BRANCHES, mergeSave, renameBranch, serializeSave, STORAGE_KEY, uid, updateBranch } from './lib/storage';
 import type { ClockState, SaveFile, Snapshot } from './lib/storage';
@@ -32,8 +34,8 @@ export default function App() {
   const clockRef = useRef(clock);
   const [tab, setTab] = useState<Tab>('story');
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [birthDrawId, setBirthDrawId] = useState<string | null>(null);
   const [chatId, setChatId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const lock = useRef(false);
   const [saved, setSaved] = useState(true);
@@ -50,6 +52,7 @@ export default function App() {
   const canUseModel = status.configured && state.config.intelligence > 0;
   const latestSave = useRef(save);
   useEffect(() => { latestSave.current = save; }, [save]);
+  useEffect(() => { window.scrollTo(0, 0); }, [active.id, active.stage, birthDrawId]);
   useEffect(() => {
     const timer = setTimeout(() => {
       try { localStorage.setItem(STORAGE_KEY, serializeSave(saveClock(save, clockRef.current))); setSaved(true); } catch { setSaved(false); }
@@ -129,7 +132,7 @@ export default function App() {
         if (s.activeBranchId !== active.id || branch?.state !== state || branch.simulation !== simulation) return s;
         return saveClock(updateBranch(s, result.state, result.simulation, true), nextClock);
       });
-      setSelected(null); setDecisionHidden(false);
+      setDecisionHidden(false);
       if (canUseModel && !result.state.ended && (!oldClock.fastForward || result.state.currentEvent.choices.length > 0 || state.config.intelligence >= 80)) {
         try {
           const generated = await generateTurn(result.state, token);
@@ -145,7 +148,7 @@ export default function App() {
     if (lock.current || state.ended || simulation.reflectionAge !== undefined) return;
     try {
       const result = resolveSimulationDecision(state, simulation, choiceId);
-      apply(result.state, result.simulation); setSelected(null); setDecisionHidden(false);
+      apply(result.state, result.simulation); setDecisionHidden(false);
       changeClock({ paused: false, fastForward: false });
     } catch (error) { setToast((error as Error).message); }
   }
@@ -165,25 +168,34 @@ export default function App() {
   }
   function changeFocus(focus: Focus) { if (!lock.current && !state.ended && state.age >= 6) apply(setFocus(state, focus), simulation); }
   function changeIntelligence(value: number) { if (!lock.current && !state.ended) apply(setIntelligence(state, value), { ...simulation, config: { ...simulation.config, intelligence: value } }); }
-  function newLife(config: Partial<FoundationConfig>) {
-    if (lock.current) return;
-    if (save.branches.length >= MAX_BRANCHES) { setToast('已保存 8 条时间线，请先导出存档保留故事。'); return; }
-    const outgoingClock = clockRef.current;
-    const result = createSimulation(config); const id = uid(); const nextClock = { ...newClock(), paused: true };
-    setSave(s => ({ ...s, activeBranchId: id, branches: [...saveClock(s, outgoingClock).branches.filter(b => b.stage !== 'setup'), { id, name: `${result.state.config.name}的一生`, createdAt: new Date().toISOString(), ...result, snapshots: [], stage: 'certificate', clock: nextClock }] }));
-    clockRef.current = nextClock; setClock(nextClock); setSelected(null); setDialog(null); setChatId(null); setTab('story');
+  function newLife(config: Partial<FoundationConfig>): boolean {
+    if (lock.current) return false;
+    const preserved = saveClock(save, clockRef.current);
+    const existing = preserved.branches.filter(branch => branch.stage !== 'setup');
+    if (existing.length >= MAX_BRANCHES) { setToast('已保存 8 条时间线。请先在备份与载入中保留现有故事。'); return false; }
+    try {
+      const result = createBirthDraw(config); const id = uid(); const nextClock = { ...newClock(), paused: true };
+      const next: SaveFile = { version: 2, activeBranchId: id, branches: [...existing, { id, name: `${result.state.config.name}的一生`, createdAt: new Date().toISOString(), ...result, snapshots: [], stage: 'certificate', clock: nextClock }] };
+      // Commit the draw before its reveal: skip and refresh always retain this outcome.
+      try { localStorage.setItem(STORAGE_KEY, serializeSave(next)); setSaved(true); }
+      catch { setSaved(false); setToast('抽签结果已生成，但浏览器无法保存。请先备份这一生再关闭页面。'); }
+      setSave(next); setBirthDrawId(id);
+      clockRef.current = nextClock; setClock(nextClock); setDialog(null); setChatId(null); setTab('story');
+      return true;
+    } catch (error) { setToast(error instanceof Error ? error.message : '抽签暂时没有完成，请再试一次。'); return false; }
   }
   function beginLife() { changeClock({ paused: false }); setSave(s => ({ ...s, branches: s.branches.map(b => b.id === s.activeBranchId ? { ...b, stage: 'playing' } : b) })); }
   function switchBranch(id: string) {
     if (lock.current) return;
+    setBirthDrawId(null);
     const preserved = saveClock(save, clockRef.current);
     const branch = preserved.branches.find(b => b.id === id);
     if (!branch) return;
     const nextClock = { ...branch.clock, paused: true, fastForward: false };
     setSave(saveClock({ ...preserved, activeBranchId: id }, nextClock));
-    clockRef.current = nextClock; setClock(nextClock); setSelected(null); setChatId(null); setDecisionHidden(false);
+    clockRef.current = nextClock; setClock(nextClock); setChatId(null); setDecisionHidden(false);
   }
-  function fork(snapshot: Snapshot) { if (lock.current) return; try { const forked = forkBranch(saveClock(save, clockRef.current), snapshot); setSave(forked); const c = forked.branches.at(-1)!.clock; clockRef.current = c; setClock(c); setSelected(null); setTab('story'); setDecisionHidden(false); setToast(`已回到 ${snapshot.state.year} 年，原来的故事仍然保留。`); } catch (error) { setToast((error as Error).message); } }
+  function fork(snapshot: Snapshot) { if (lock.current) return; try { const forked = forkBranch(saveClock(save, clockRef.current), snapshot); setSave(forked); const c = forked.branches.at(-1)!.clock; clockRef.current = c; setClock(c); setTab('story'); setDecisionHidden(false); setToast(`已回到 ${snapshot.state.year} 年，原来的故事仍然保留。`); } catch (error) { setToast((error as Error).message); } }
   function loadBackup(incoming: SaveFile, mode: ImportMode) {
     if (lock.current) throw new Error('故事还在更新，请稍后再试。');
     const current = saveClock(save, clockRef.current);
@@ -197,8 +209,9 @@ export default function App() {
     }
     serializeSave(loaded);
     const c = { ...loaded.branches.find(branch => branch.id === loaded.activeBranchId)!.clock, paused: true, fastForward: false };
+    setBirthDrawId(null);
     setSave(saveClock(loaded, c)); clockRef.current = c; setClock(c);
-    setSelected(null); setDecisionHidden(false); setChatId(null); setDialog(null);
+    setDecisionHidden(false); setChatId(null); setDialog(null);
     setTab(mode === 'merge' ? 'timelines' : 'story');
     setToast(mode === 'merge' ? `已加入 ${incoming.branches.length} 条时间线，原来的人生仍然保留。` : '备份已恢复，时间暂停在你离开的地方。');
   }
@@ -257,10 +270,12 @@ export default function App() {
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, button, a'))) return;
       const index = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : /^[a-f]$/i.test(event.key) ? event.key.toLowerCase().charCodeAt(0) - 97 : -1;
       const choice = state.currentEvent.choices[index];
-      if (choice) { event.preventDefault(); setSelected(choice.id); }
+      if (choice) { event.preventDefault(); resolveDecision(choice.id); }
     }
     window.addEventListener('keydown', selectWithKeyboard);
     return () => window.removeEventListener('keydown', selectWithKeyboard);
+    // Rebind to the current life and event; fractional clock updates do not change the decision.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active.stage, chatId, decisionHidden, dialog, simulation.reflectionAge, state, tab]);
   const openChat = (id: string) => { if (state.people.some(person => person.id === id)) setChatId(id); };
   const modalNotice = { notice: toast, onDismissNotice: () => setToast('') };
@@ -269,11 +284,12 @@ export default function App() {
   const header = <header className="app-header">
     <a className="brand" href="#" onClick={e => { e.preventDefault(); setTab('story'); }} aria-label="人生岔路首页"><span className="pixel-brand-mark" aria-hidden="true">✦</span><strong>人生岔路</strong></a>
     <span className="header-note">从随机出生开始，经历仅此一次的人生。</span>
-    <div className="header-actions"><button className="settings-button" onClick={() => setDialog('settings')} aria-label="游戏设置"><Settings size={16}/><span>设置</span></button><button className="secondary-button" disabled={busy} onClick={() => setDialog('setup')}>新的一生</button></div>
+    <div className="header-actions"><button className="settings-button" onClick={() => setDialog('settings')} aria-label="游戏设置"><Settings size={16}/><span>设置</span></button>{active.stage !== 'setup' && <button className="secondary-button" disabled={busy} onClick={() => setDialog('setup')}>新的一生</button>}</div>
   </header>;
   return <div className={`app-shell ${active.stage === 'playing' ? 'is-playing' : ''}`}>
-    {active.stage !== 'playing' && header}
+    {active.stage !== 'playing' && !birthDrawId && header}
     {active.stage === 'setup' ? <BirthWelcome onCreate={newLife} onSettings={() => setDialog('settings')} hasSaved={save.branches.some(b => b.stage === 'playing')} onResume={() => switchBranch(save.branches.find(b => b.stage === 'playing')!.id)}/>
+      : active.stage === 'certificate' && birthDrawId === active.id ? <BirthReveal key={active.id} state={state} simulation={simulation} onComplete={() => setBirthDrawId(null)}/>
       : active.stage === 'certificate' ? <BirthCertificate state={state} simulation={simulation} onBegin={beginLife} onShare={shareCard}/>
       : <>
         <header className="time-toolbar">
@@ -292,7 +308,7 @@ export default function App() {
           <div className="left-rail"><Biography state={state} simulation={simulation} onEconomy={() => setDialog('economy')} onTimeline={() => setTab('timelines')} disabled={busy}/></div>
           <div className="center-flow">
             {tab === 'story' ? state.ended ? <LifeEnding state={state} simulation={simulation} onNew={() => setDialog('setup')} onHistory={() => setDialog('history')} onShare={shareCard}/>
-              : <><Story key={state.currentEvent.id} state={state} simulation={simulation} selected={selected} onSelect={setSelected} onAdvance={() => selected && resolveDecision(selected)} onFocus={changeFocus} onChat={openChat} busy={busy} saved={saved} configured={status.configured} hidden={decisionHidden} onToggle={() => setDecisionHidden(!decisionHidden)}/>
+              : <><Story key={state.currentEvent.id} state={state} simulation={simulation} onChoose={resolveDecision} onFocus={changeFocus} onChat={openChat} busy={busy} saved={saved} configured={status.configured} hidden={decisionHidden} onToggle={() => setDecisionHidden(!decisionHidden)}/>
                 <section className="record-preview panel"><div className="section-heading"><h2>人生纪录</h2><span>最新在前 · 点击收藏</span></div>
                   {visibleRecords.map(e => <button key={e.id} disabled={busy} className={`record-row ${simulation.starred.includes(e.id) ? 'starred' : ''}`} onClick={() => apply(state, { ...simulation, starred: simulation.starred.includes(e.id) ? simulation.starred.filter(id => id !== e.id) : [...simulation.starred, e.id] })}><span className="record-age">{e.age}岁<small>{e.year}</small></span><span className="record-content"><strong>{e.title}</strong><span className="record-description">{e.description}</span></span><Star size={13} fill={simulation.starred.includes(e.id) ? 'currentColor' : 'none'}/></button>)}
                   <button className="text-button" onClick={() => setDialog('history')}>查看更早的纪录<ArrowRight size={12}/></button>
@@ -303,7 +319,7 @@ export default function App() {
         </div>
       </>}
     {toast && !hasModal && <div className="toast" role="status"><span>{toast}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setToast('')}><X size={15}/></button></div>}
-    {dialog === 'setup' && <Modal {...modalNotice} title="新的一生" subtitle="从零岁开始，世界替你抽出最初的那张牌。" wide onClose={() => setDialog(null)}><BirthWelcome onCreate={newLife} onSettings={() => setDialog('settings')} hasSaved onResume={() => setDialog(null)}/></Modal>}
+    {dialog === 'setup' && <Modal {...modalNotice} title="抽取新的一生" subtitle="选择年代，出生地与身份交给命运。" wide onClose={() => setDialog(null)}><BirthWelcome onCreate={newLife} onSettings={() => setDialog('settings')} hasSaved onResume={() => setDialog(null)}/></Modal>}
     {dialog === 'economy' && <Modal {...modalNotice} title="家人与生活" subtitle="让每一笔选择，留在真实的账本里。" wide onClose={() => setDialog(null)}><fieldset disabled={busy || state.ended} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><LifeEconomy state={state} simulation={simulation} onAction={economicAction} onPolicy={policy} onMigrate={move}/></fieldset></Modal>}
     {dialog === 'history' && <Modal {...modalNotice} title="人生手记" subtitle={`${state.config.name} · ${state.config.birthYear} — ${state.year}`} wide onClose={() => setDialog(null)}><HistoryPanel state={state}/>{simulation.notes.filter(n => n.text).map(n => <p className="reflection-saved" key={n.age}>{n.age} 岁的我：{n.text}</p>)}</Modal>}
     {simulation.reflectionAge !== undefined && !dialog && !chatId && !busy && <Modal {...modalNotice} title="暂停片刻" subtitle="把这段人生，和自己的生活放在一起想一想。" onClose={() => saveNote('')}><Reflection age={simulation.reflectionAge} onSave={saveNote}/></Modal>}

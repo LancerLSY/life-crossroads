@@ -1,0 +1,115 @@
+.birth-lottery, .birth-reveal { width: calc(100% - 40px); max-width: 1320px; margin: 0 auto; padding: 24px 0 32px; }
+.lottery-heading { text-align: center; margin-bottom: 24px; }
+.lottery-heading h1 { font: 800 clamp(28px, 3.5vw, 46px)/1.3 var(--serif); letter-spacing: .04em; color: var(--ink); }
+.lottery-heading h1 span { color: var(--accent); }
+.lottery-heading p { margin-top: 10px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+.lottery-layout { display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(290px, 1fr); gap: 14px; align-items: stretch; }
+.lottery-stage { position: relative; isolation: isolate; display: flex; align-items: flex-end; min-height: clamp(460px, 65vh, 680px); border: 1px solid var(--line-strong); outline: 1px solid var(--line); outline-offset: 4px; background: #052d40; overflow: hidden; }
+.lottery-world-art { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center top; image-rendering: pixelated; }
+.lottery-stage-bottom { width: 100%; padding: 22px; }
+.birth-tickets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.birth-ticket { display: grid; justify-items: center; align-content: center; gap: 7px; min-width: 0; min-height: 92px; padding: 12px 8px; border: 3px double #c4bba4; background: #f4f0e5; color: #293b39; box-shadow: 0 4px 0 #092b35; }
+.birth-ticket > svg { color: #7a8174; }
+.birth-ticket > span { font-size: 12px; font-weight: 600; }
+.birth-ticket > strong { font: 700 24px/1.2 var(--mono); overflow-wrap: anywhere; text-align: center; }
+.draw-button { display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; max-width: 460px; min-height: 58px; margin: 20px auto 0; padding: 12px 18px; border: 4px double #f1c8c9; background: #8c1d3c; color: #fff8ec; box-shadow: 0 4px 0 #321d28; font: 700 23px/1.35 var(--serif); letter-spacing: .08em; }
+.draw-button:hover:not(:disabled) { background: #a02a4b; transform: translateY(-1px); }
+.draw-button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #321d28; }
+.lottery-stage-bottom > p { margin-top: 13px; text-align: center; color: #e8eee3; font-size: 11px; line-height: 1.7; text-shadow: 0 1px #052d40; }
+.lottery-controls { display: flex; flex-direction: column; border: 1px solid var(--line-strong); background: var(--panel); padding: 22px; min-width: 0; }
+.lottery-controls legend { font-size: 16px; font-weight: 700; margin-bottom: 14px; color: var(--ink); }
+.lottery-controls .world-options { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.lottery-controls .world-options button { min-height: 43px; padding: 8px 3px; font-size: 13px; text-align: center; }
+.lottery-controls .world-options button.selected { background: var(--teal); color: var(--panel); box-shadow: none; }
+.lottery-year { text-align: center; padding: 18px 8px; margin: 17px 0 23px; border: 1px solid var(--line); background: var(--green-soft); }
+.lottery-year > span, .lottery-year label { display: block; font-size: 12px; color: var(--muted); }
+.lottery-year > strong { display: block; margin-top: 8px; font: 38px/1.25 var(--mono); color: var(--ink); }
+.lottery-year label input { max-width: 180px; margin: 8px auto; padding: 6px; text-align: center; font: 28px/1.3 var(--mono); }
+.lottery-year small { display: block; margin-top: 8px; font-size: 11px; color: var(--muted); line-height: 1.6; }
+.lottery-controls .segmented-control button { font-size: 12px; padding: 10px 5px; }
+.lottery-settings { margin-top: 22px; padding: 17px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.lottery-settings summary { font-size: 13px; cursor: pointer; color: var(--ink); font-weight: 600; }
+.lottery-settings > label { margin-top: 16px; }
+.lottery-settings > button { margin-top: 14px; }
+.lottery-rule { color: var(--muted); font-size: 13px; line-height: 1.8; text-align: center; padding: 17px 0 0; margin-top: auto; }
+.lottery-resume { display: flex; margin: 14px auto 0; font-size: 12px; }
+.lottery-odds { margin-top: 22px; font-size: 12px; color: var(--muted); }
+.lottery-odds summary { width: fit-content; margin: auto; color: var(--teal); cursor: pointer; }
+.lottery-odds > p { line-height: 1.8; text-align: center; margin: 15px 0; }
+.lottery-odds ol { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 24px; list-style: none; padding: 0; max-width: 760px; margin: 20px auto; }
+.lottery-odds li { display: flex; justify-content: space-between; position: relative; padding-bottom: 8px; }
+.lottery-odds li i { position: absolute; bottom: 0; left: 0; height: 2px; background: var(--teal); }
+.modal:has(.birth-lottery) { width: 1120px; }
+.modal .birth-lottery { width: 100%; padding: 0; }
+.modal .birth-lottery > .lottery-heading { display: none; }
+.modal .lottery-stage { min-height: 470px; }
+.modal .lottery-controls { padding: 18px; }
+.birth-reveal { max-width: 1000px; padding-top: 35px; }
+.reveal-stage { min-height: 540px; }
+.reveal-content { width: 100%; padding: 25px; }
+.reveal-avatar { display: flex; justify-content: center; align-items: center; width: 96px; height: 116px; margin: 0 auto 20px; background: #f4f0e5; border: 4px double #c4bba4; box-shadow: 0 4px #092b35; color: #8c1d3c; }
+.reveal-stage .birth-ticket { min-height: 130px; }
+.reveal-stage .birth-ticket strong { font-family: inherit; font-size: 19px; }
+.reveal-stage .birth-ticket small { font-size: 11px; text-align: center; line-height: 1.6; }
+.birth-ticket.revealed { animation: ticket-reveal .35s steps(5, end) both; }
+.is-drawing .birth-ticket.sealed { animation: ticket-wait .7s steps(2, end) infinite; }
+.reveal-announcement { text-align: center; color: #fff8ec; font-size: 13px; min-height: 22px; margin: 16px 0 0; text-shadow: 0 1px #052d40; }
+.reveal-skip { display: block; margin: 12px auto 0; min-height: 42px; padding: 10px 22px; color: #fff8ec; border: 1px solid #b9d4ca; background: #0c3948; font-size: 13px; }
+.reveal-content .draw-button { margin-top: 12px; }
+.reveal-note { text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 22px; }
+@keyframes ticket-reveal { from { transform: translateY(8px); } to { transform: translateY(0); } }
+@keyframes ticket-wait { 50% { transform: translateY(-3px); } }
+@media (max-width: 800px) {
+  .birth-lottery, .birth-reveal { width: calc(100% - 32px); padding-top: 18px; }
+  .lottery-heading { margin-bottom: 20px; }
+  .lottery-heading p { font-size: 13px; }
+  .lottery-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .lottery-controls { order: -1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 16px; align-items: start; }
+  .lottery-controls > fieldset:first-child { grid-column: 1 / -1; }
+  .lottery-controls legend { font-size: 13px; margin-bottom: 8px; }
+  .lottery-controls .world-options button { min-height: 36px; }
+  .lottery-year { grid-column: 1; grid-row: 2; padding: 9px 5px; margin: 0; }
+  .lottery-year > strong { font-size: 24px; margin-top: 5px; }
+  .lottery-year label input { font-size: 20px; min-height: 36px; max-width: 135px; margin-bottom: 0; }
+  .lottery-year small { margin-top: 4px; font-size: 10px; }
+  .lottery-controls > fieldset:nth-of-type(2) { grid-column: 2; grid-row: 2; }
+  .lottery-controls .segmented-control { flex-wrap: wrap; }
+  .lottery-controls .segmented-control button { flex: 1; min-width: 43px; padding: 8px 3px; font-size: 11px; }
+  .lottery-settings { grid-column: 1 / -1; margin: 0; padding: 10px 0; }
+  .lottery-rule { grid-column: 1 / -1; padding: 0; font-size: 11px; }
+  .lottery-rule br { display: none; }
+  .lottery-resume { grid-column: 1 / -1; margin: 0 auto; }
+  .lottery-stage, .modal .lottery-stage { min-height: 400px; }
+  .lottery-stage-bottom { padding: 16px; }
+  .draw-button { font-size: 20px; min-height: 52px; }
+  .lottery-odds ol { grid-template-columns: repeat(2, 1fr); }
+  .reveal-stage { min-height: 570px; }
+  .reveal-content { padding: 18px; }
+  .reveal-stage .birth-tickets { grid-template-columns: 1fr; gap: 8px; }
+  .reveal-stage .birth-ticket { grid-template-columns: 24px 70px 1fr; justify-items: start; min-height: 70px; gap: 4px 8px; padding: 10px 12px; }
+  .reveal-stage .birth-ticket > svg { grid-row: 1 / 3; align-self: center; }
+  .reveal-stage .birth-ticket > span { grid-column: 2; align-self: center; }
+  .reveal-stage .birth-ticket > strong { grid-column: 3; text-align: left; font-size: 16px; }
+  .reveal-stage .birth-ticket > small { grid-column: 2 / -1; text-align: left; }
+  .reveal-avatar { margin-bottom: 16px; }
+}
+@media (max-width: 480px) {
+  .birth-lottery, .birth-reveal { width: calc(100% - 24px); }
+  .lottery-heading h1 { font-size: 27px; }
+  .lottery-heading p { font-size: 12px; }
+  .lottery-controls { padding: 12px; gap: 10px; }
+  .lottery-stage, .modal .lottery-stage { min-height: 340px; }
+  .lottery-stage-bottom { padding: 12px; }
+  .birth-tickets { gap: 7px; }
+  .birth-ticket { min-height: 86px; padding: 10px 4px; gap: 5px; }
+  .birth-ticket > span { font-size: 11px; }
+  .birth-ticket > strong { font-size: 20px; }
+  .draw-button { font-size: 18px; gap: 8px; letter-spacing: .03em; }
+  .reveal-stage { min-height: 560px; }
+  .reveal-content { padding: 12px; }
+  .reveal-stage .birth-ticket { grid-template-columns: 20px 60px 1fr; padding: 10px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .birth-ticket.revealed, .is-drawing .birth-ticket.sealed { animation: none; }
+  .draw-button:hover:not(:disabled), .draw-button:active:not(:disabled) { transform: none; }
+}

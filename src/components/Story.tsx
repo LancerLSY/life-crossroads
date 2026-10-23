@@ -1,10 +1,10 @@
-import { Check, ArrowRight, LoaderCircle, Sparkles } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import type { Focus, GameState } from '../game/types.ts';
 import type { Simulation } from '../simulation/types.ts';
 import { FOCUS_OPTIONS } from '../game/engine.ts';
 import PixelScene from './PixelScene';
-export default function Story({ state, simulation, selected, onSelect, onAdvance, onFocus, onChat, busy, saved, configured, hidden, onToggle }: {
-  state: GameState; simulation: Simulation; selected: string | null; onSelect: (id: string) => void; onAdvance: () => void;
+export default function Story({ state, simulation, onChoose, onFocus, onChat, busy, saved, configured, hidden, onToggle }: {
+  state: GameState; simulation: Simulation; onChoose: (id: string) => void;
   onFocus: (focus: Focus) => void; onChat: (id: string) => void; busy: boolean; saved: boolean; configured: boolean;
   hidden: boolean; onToggle: () => void;
 }) {
@@ -18,8 +18,8 @@ export default function Story({ state, simulation, selected, onSelect, onAdvance
       <div className="decision-top"><span className="decision-label">{event.source === 'deepseek' ? <><Sparkles size={12}/> AI 抉择</> : '重大抉择'}</span><span>{state.age} 岁 · {state.year} 年</span><button className="text-button" onClick={onToggle}>{hidden ? '重新展开' : '先收起来'}</button></div>
       <h2>{event.title}</h2>
       {hidden ? <p className="muted">时间已停下，准备好后再选择。</p> : <><p className="narrative">{event.description}</p>
-        <div className="choices" aria-label="选择你的人生方向">{event.choices.map((c, i) => <button key={c.id} disabled={busy} aria-pressed={selected === c.id} className={`choice ${selected === c.id ? 'selected' : ''}`} onClick={() => onSelect(c.id)}><span className="choice-letter">{selected === c.id ? <Check size={15}/> : i + 1}</span><span className="choice-copy"><strong>{c.label}</strong><small>{c.hint}</small></span></button>)}</div>
-        <div className="decision-confirm"><span>选择会在当年生效。</span><button className="primary-button" disabled={busy || !selected} onClick={onAdvance}>{busy ? <><LoaderCircle size={14} className="spin"/>世界正在回应</> : <>确认选择<ArrowRight size={14}/></>}</button></div>
+        <div className="choices" aria-label="选择你的人生方向">{event.choices.map((c, i) => <button key={c.id} disabled={busy} className="choice" onClick={() => onChoose(c.id)}><span className="choice-letter">{i + 1}</span><span className="choice-copy"><strong>{c.label}</strong><small>{c.hint}</small></span></button>)}</div>
+        <p className="muted">点击选项，决定就会在当年生效。</p>
       </>}
     </section>}
     <div className="story-bottom"><span className="save-label"><Check size={12}/>{saved ? '已保存' : '存档暂未保存'}</span><span><i className={`status-dot ${configured ? 'connected' : ''}`}/>{configured ? state.config.intelligence ? 'DeepSeek 已连接' : '本地叙事' : '本地世界'}</span>{busy && <span>世界正在思考…</span>}</div>
