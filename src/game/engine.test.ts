@@ -128,7 +128,7 @@ test('local chats keep time, add both messages and shared memories, and remain i
   assert.deepEqual(friend.messages.map(message => message.role), ['user', 'assistant'])
   assert.ok(friend.messages[1]!.text.length > 0)
   assert.match(friend.memories[0]!, /迷茫/)
-  assert.ok(friend.trust > state.people.find(person => person.id === 'friend')!.trust)
+  assert.equal(friend.trust, state.people.find(person => person.id === 'friend')!.trust)
   const ai = interact(next, 'friend', '那我们一起想想。', '我们先选一件小事做起吧。')
   assert.equal(ai.people.find(person => person.id === 'friend')!.messages.at(-1)!.text, '我们先选一件小事做起吧。')
   assert.ok(isGameState(ai))
@@ -323,7 +323,7 @@ function neutralYear(state: GameState): GameState {
 
 function readyForPartnership(): GameState {
   let state = setFocus(createLife({ startAge: 22, seed: 319 }), 'social')
-  for (let index = 0; index < 12; index++) state = interact(state, 'acquaintance', `想更了解你，也聊聊我最近的生活 ${index}`)
+  state = { ...state, people: state.people.map(person => person.id === 'acquaintance' ? { ...person, closeness: 64, trust: 72 } : person) }
   for (let turn = 0; turn < 20; turn++) {
     if (state.currentEvent.choices.some(choice => choice.id.endsWith('-action-begin-partnership'))) return state
     state = neutralYear(state)

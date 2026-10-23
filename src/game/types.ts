@@ -9,6 +9,35 @@ export interface ChatMessage {
   year: number
 }
 
+export interface ChatReaction {
+  intent: 'care' | 'listen' | 'apology' | 'boundary' | 'dismissive' | 'hostility' | 'promise' | 'neutral'
+  reason: string
+  commitment?: 'company' | 'help'
+}
+export type RelationshipAction = 'listen' | 'company' | 'help' | 'apologize' | 'promise-company' | 'promise-help' | 'cancel-promise'
+export interface RelationshipHistory {
+  id: string
+  year: number
+  source: 'chat' | 'action' | 'commitment' | 'experience'
+  key: string
+  reason: string
+  closenessDelta: number
+  trustDelta: number
+}
+export interface Commitment {
+  id: string
+  kind: 'company' | 'help'
+  createdYear: number
+  dueYear: number
+  status: 'pending' | 'fulfilled' | 'broken' | 'cancelled'
+}
+export interface RelationshipYear {
+  year: number
+  keys: string[]
+  closenessGain: number
+  trustGain: number
+  happinessGain: number
+}
 export interface Person {
   id: string
   name: string
@@ -21,6 +50,10 @@ export interface Person {
   avatar: number
   memories: string[]
   messages: ChatMessage[]
+  relationshipStrain?: number
+  relationshipHistory?: RelationshipHistory[]
+  commitments?: Commitment[]
+  relationshipYear?: RelationshipYear
 }
 
 export interface Choice {

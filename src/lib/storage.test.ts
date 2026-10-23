@@ -1,6 +1,7 @@
+import { myanmarRoll } from '../simulation/myanmar.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { advanceSimulation, createSimulation, resolveSimulationDecision } from '../simulation/core.ts'
+import { advanceSimulation, createSimulation, resolveSimulationDecision, spend } from '../simulation/core.ts'
 import type { SimulationResult } from '../simulation/types.ts'
 import { forkBranch, initialSave, loadSave, MAX_BRANCHES, MAX_SAVE_BYTES, mergeSave, parseSave, renameBranch, serializeSave, STORAGE_KEY, updateBranch, validSave } from './storage.ts'
 import type { ClockState, SaveFile, Snapshot } from './storage.ts'
@@ -352,4 +353,61 @@ test('pending year starts round-trip, remain protected on export, and reject inc
   const forked = forkBranch(pending, saved)
   assert.equal(forked.branches.at(-1)!.yearStart, undefined)
   assert.ok(validSave(forked))
+})
+
+
+test('hidden-crisis imports reject mismatched events, orphaned contacts and revived fatal outcomes', () => {
+  const save = progress(fixture(918), 18)
+  const branch = save.branches[0]
+  let seed = 0
+  while (!(myanmarRoll(seed, 1) < .8 && myanmarRoll(seed, 1, 'fatal-route') < .9)) seed++
+  branch.state.config.seed = seed
+  branch.simulation.config.seed = seed
+  branch.simulation.economy.cash = 1e8
+  const arrival = spend(branch.simulation, branch.state, 'travel', 100, 'MMR')
+  Object.assign(branch, arrival)
+  delete branch.yearStart
+  assert.ok(validSave(save))
+  for (const mutation of [
+    (b: typeof branch) => { b.state.currentEvent.id = 'ordinary-event' },
+    (b: typeof branch) => { b.state.currentEvent.choices[0].id = 'surprise:mmr:999:help:escape' },
+    (b: typeof branch) => { b.state.currentEvent.choices = [] },
+    (b: typeof branch) => { b.simulation.crisis!.resumeEvent.choices = [{ id: 'lost-person', label: '对话', hint: '交流', effects: {}, personId: 'missing-person' }] },
+  ]) {
+    const bad = clone(save)
+    mutation(bad.branches[0])
+    assert.equal(validSave(bad), false)
+  }
+  let current = arrival
+  for (const action of ['help', 'escape', 'help']) current = resolveSimulationDecision(current.state, current.simulation, current.state.currentEvent.choices.find(c => c.id.endsWith(`:${action}`))!.id)
+  Object.assign(branch, current)
+  assert.equal(branch.state.ended, true)
+  assert.ok(validSave(save))
+  branch.state.ended = false
+  delete branch.state.ending
+  branch.simulation.years.at(-1)!.alive = true
+  assert.equal(validSave(save), false)
+})
+
+test('a crisis after an annual choice preserves a valid rewind point through its resolution', () => {
+  let save = progress(fixture(918), 18)
+  let b = save.branches[0]
+  let seed = 0
+  while (!(myanmarRoll(seed, 1) < .8 && myanmarRoll(seed, 1, 'fatal-route') >= .9)) seed++
+  b.state.config.seed = seed
+  b.simulation.config.seed = seed
+  b.simulation.economy.cash = 1e8
+  const annual = resolveSimulationDecision(b.state, b.simulation, b.state.currentEvent.choices[0].id)
+  save = updateBranch(save, annual.state, annual.simulation)
+  const before = clone(save.branches[0].yearStart)
+  b = save.branches[0]
+  let r = spend(b.simulation, b.state, 'travel', 100, 'MMR')
+  save = updateBranch(save, r.state, r.simulation)
+  assert.ok(validSave(save))
+  for (const action of ['help', 'help', 'help']) {
+    r = resolveSimulationDecision(r.state, r.simulation, r.state.currentEvent.choices.find(c => c.id.endsWith(`:${action}`))!.id)
+    save = updateBranch(save, r.state, r.simulation)
+    assert.ok(validSave(save))
+    assert.deepEqual(save.branches[0].yearStart, before)
+  }
 })

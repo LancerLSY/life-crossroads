@@ -1,3 +1,4 @@
+import { relationshipStrain } from './relationships.ts'
 import type { Choice, GameState, LifeEvent, Person, WorldThread } from './types.ts'
 
 // Separate keyed draws keep replay stable even when another subsystem consumes randomness.
@@ -10,11 +11,11 @@ function draw(state: GameState, key: string): number {
   return (value >>> 0) / 4294967296
 }
 const present = (person: Person) => !person.role.includes('已离世')
-function direction(state: GameState, person: Person): WorldThread['direction'] {
-  const recent = person.messages.filter(message => message.role === 'user' && message.year >= state.year - 1).slice(-3)
-  const harsh = recent.some(message => /笨蛋|滚开|闭嘴|废物|去死|\bidiot\b|\bstupid\b/i.test(message.text))
-  const score = (person.trust + person.closeness) / 2 + (recent.length ? 8 : 0)
-  if (harsh || score < 30) return 'conflict'
+function direction(_state: GameState, person: Person): WorldThread['direction'] {
+  const strain = relationshipStrain(person)
+  const score = (person.trust + person.closeness) / 2
+  if (score < 30 || strain >= 5) return 'conflict'
+  if (strain > 0) return 'distance'
   return score >= 60 ? 'support' : 'distance'
 }
 const impacts = {

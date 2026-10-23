@@ -1,3 +1,4 @@
+import { crisisActive, validMyanmarSnapshot } from '../simulation/myanmar.ts'
 import { isGameState } from '../game/engine.ts'
 import type { Focus, GameState } from '../game/types.ts'
 import { createSimulation, validateSimulation } from '../simulation/core.ts'
@@ -60,6 +61,7 @@ function validClock(value: unknown): value is ClockState {
 function validSnapshot(value: unknown): value is Snapshot {
   if (!record(value) || !isGameState(value.state) || !validateSimulation(value.simulation)) return false
   const { state, simulation } = value
+  if (!validMyanmarSnapshot(state, simulation)) return false
   const lastYear = simulation.years.at(-1)
   return state.config.startAge === 0 && simulation.config.birthYear === state.config.birthYear
     && simulation.config.seed === state.config.seed && simulation.config.intelligence === state.config.intelligence
@@ -90,7 +92,7 @@ export function validSave(value: unknown): value is SaveFile {
         const point = candidate.yearStart
         if (!validSnapshot(point) || !sameLife(point, candidate) || point.state.year !== candidate.state.year
           || point.state.config.seed !== candidate.state.config.seed || !point.state.currentEvent.choices.length
-          || candidate.state.currentEvent.choices.length !== 0) return false
+          || candidate.state.currentEvent.choices.length !== 0 && !crisisActive(candidate.simulation)) return false
       }
       let previousYear = -Infinity
       for (const point of candidate.snapshots) {

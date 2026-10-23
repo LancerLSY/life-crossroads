@@ -36,6 +36,6 @@ export default function PixelScene({ state, simulation, dark, className = '', sh
         style={{ position: 'absolute', left: `${person.x / SCENE_WIDTH * 100}%`, top: `${person.y / SCENE_HEIGHT * 100}%`, width: `${person.width / SCENE_WIDTH * 100}%`, height: `${person.height / SCENE_HEIGHT * 100}%`, background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
       />)}
     </div>
-    {showCaption && <figcaption className="pixel-scene-caption">{model.countryName} · {model.urban ? '城市' : '乡村'} · {{ flat: '公寓', cottage: '乡间小屋', hut: '简朴的小屋', house: '自己的家', villa: '花园住宅' }[model.home]} · {model.ended ? '共同的记忆' : model.people.length > 1 ? `画面中 ${model.people.length - 1} 位家人` : '独自生活'}</figcaption>}
+    {showCaption && <figcaption className="pixel-scene-caption">{model.kind === 'crisis' ? '缅甸 · 虚构支线' : `${model.countryName} · ${model.urban ? '城市' : '乡村'}`} · {model.summary}</figcaption>}
   </figure>
 }

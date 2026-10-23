@@ -1,3 +1,4 @@
+import type { MyanmarCrisis } from './myanmar.ts'
 import type { Focus, GameState } from '../game/types.ts'
 
 export type World = 'past' | 'present' | 'future'
@@ -127,13 +128,18 @@ export interface Simulation {
   temperament?: Temperament
   peers: Peer[]
   years: YearRecord[]
-  notes: { age: number; text: string }[]
+  notes: { age: number; text: string; kind?: 'event' }[]
   starred: string[]
   reflectedAges: number[]
   reflectionAge?: number
   /** One-year earnings adjustment from an already resolved decision; consumed at settlement. */
   pendingIncomeFactor?: number
   cause?: string
+  myanmarInjury?: boolean
+  myanmarVisits?: number
+  myanmarLastVisitKey?: string
+  myanmarVisitKeys?: string[]
+  crisis?: MyanmarCrisis
 }
 
 export interface SimulationResult {

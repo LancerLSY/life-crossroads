@@ -1,3 +1,4 @@
+const CHAT_INTENTS = ['care', 'listen', 'apology', 'boundary', 'dismissive', 'hostility', 'promise', 'neutral'];
 const STAT_KEYS = ['health', 'happiness', 'knowledge', 'wealth'];
 const FOCUSES = ['balance', 'study', 'career', 'social', 'health'];
 const KINDS = ['life', 'choice', 'relationship', 'world'];
@@ -32,14 +33,37 @@ function validEvent(value, peopleIds) {
     && new Set(value.choices.map((choice) => choice.id)).size === value.choices.length;
 }
 
-function validPerson(value) {
+function validRelationshipState(person, currentYear, firstYear) {
+  if (person.relationshipStrain !== undefined && !number(person.relationshipStrain, 0, 100)) return false;
+  const history = person.relationshipHistory;
+  if (history !== undefined && (!list(history, 16) || !history.every(item => object(item)
+    && text(item.id, 180) && integer(item.year, firstYear, currentYear)
+    && ['chat', 'action', 'commitment', 'experience'].includes(item.source)
+    && text(item.key, 160) && text(item.reason, 240)
+    && number(item.closenessDelta, -15, 15) && number(item.trustDelta, -15, 15))
+    || new Set(history.map(item => item.id)).size !== history.length)) return false;
+  const commitments = person.commitments;
+  if (commitments !== undefined && (!list(commitments, 4) || !commitments.every(item => object(item)
+    && text(item.id, 180) && ['company', 'help'].includes(item.kind)
+    && integer(item.createdYear, firstYear, currentYear) && item.dueYear === item.createdYear + 1
+    && ['pending', 'fulfilled', 'broken', 'cancelled'].includes(item.status))
+    || new Set(commitments.map(item => item.id)).size !== commitments.length)) return false;
+  const annual = person.relationshipYear;
+  return annual === undefined || object(annual) && integer(annual.year, firstYear, currentYear)
+    && list(annual.keys, 64) && annual.keys.every(key => text(key, 160))
+    && new Set(annual.keys).size === annual.keys.length
+    && number(annual.closenessGain, 0, 12) && number(annual.trustGain, 0, 10) && number(annual.happinessGain, 0, 4);
+}
+
+function validPerson(value, currentYear, firstYear) {
   return object(value) && identifier(value.id) && text(value.name, 100) && text(value.role, 200)
     && integer(value.age, 0, 150) && text(value.personality, 1200) && number(value.closeness, 0, 100)
     && number(value.trust, 0, 100) && text(value.mood, 300) && integer(value.avatar, 0, 10000)
     && list(value.memories, 100) && value.memories.every((memory) => text(memory, 1500))
     && list(value.messages, 100) && value.messages.every((message) => object(message)
       && identifier(message.id) && ['user', 'assistant'].includes(message.role)
-      && text(message.text, 5000) && year(message.year));
+      && text(message.text, 5000) && year(message.year))
+    && validRelationshipState(value, currentYear, firstYear);
 }
 
 function validWorldMessage(value) {
@@ -76,7 +100,7 @@ export function isGameState(value) {
     || !number(value.config.intelligence, 0, 100) || !number(value.config.seed, -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)
     || !integer(value.age, 0, 120) || !year(value.year) || value.year !== value.config.birthYear + value.age
     || !object(value.stats) || !STAT_KEYS.every((key) => number(value.stats[key], 0, 100))
-    || !FOCUSES.includes(value.focus) || !list(value.people, 24) || !value.people.every(validPerson)
+    || !FOCUSES.includes(value.focus) || !list(value.people, 24) || !value.people.every(person => validPerson(person, value.year, value.config.birthYear + value.config.startAge))
     || !list(value.history, 150) || !list(value.worldMessages, 100)
     || !value.worldMessages.every(validWorldMessage) || typeof value.ended !== 'boolean'
     || !integer(value.turn, 0, 1000) || (value.ending !== undefined && !text(value.ending, 5000))) return false;
@@ -135,5 +159,10 @@ export function parseGeneratedTurn(value, state) {
 
 export function parseGeneratedChat(value) {
   if (!object(value) || !text(value.reply, 1600)) throw new Error('INVALID_MODEL_OUTPUT');
-  return { reply: value.reply.trim(), source: 'deepseek' };
+  const input = value.reaction;
+  const valid = object(input) && CHAT_INTENTS.includes(input.intent) && text(input.reason, 160)
+    && (input.commitment === undefined || input.intent === 'promise' && ['company', 'help'].includes(input.commitment));
+  const reaction = valid ? { intent: input.intent, reason: input.reason.trim(),
+    ...(input.commitment === undefined ? {} : { commitment: input.commitment }) } : undefined;
+  return { reply: value.reply.trim(), source: 'deepseek', ...(reaction ? { reaction } : {}) };
 }

@@ -1,3 +1,5 @@
+import { applyChatReaction, applyRelationshipAction, classifyReaction, settleCommitments, validateRelationshipData, relationshipStrain, updateRelationshipStrain } from './relationships.ts'
+import type { ChatReaction, RelationshipAction } from './types.ts'
 import { evolveWorld, validateWorldThreads, worldThreadEvent } from './world.ts'
 import type { Choice, Focus, GameState, LifeConfig, LifeEvent, Person, StatKey, Stats, WorldMessage } from './types.ts'
 
@@ -372,7 +374,23 @@ function applyChoiceEffects(state: GameState, choice?: Choice, annual?: { stats:
       } else if (action === 'repair-relationship' || action === 'slow-repair') mood = '慢慢重建信任'
       else if (action === 'reconcile') mood = '重新愿意靠近'
     }
-    return { ...item, role, closeness: clamp(item.closeness + delta), trust: clamp(item.trust + Math.round(delta * .7)), mood, memories: memories.slice(-12), messages: [...item.messages] }
+    const closeness = clamp(item.closeness + delta)
+    const trust = clamp(item.trust + Math.round(delta * .7))
+    let strain = item.relationshipStrain
+    let relationshipHistory = item.relationshipHistory
+    if (choice && item.id === choice.personId) {
+      strain = updateRelationshipStrain(relationshipStrain(item), trust - item.trust)
+      if (strain > 0) mood = trust > item.trust ? '慢慢修复信任，仍需要一点空间' : '需要一点空间'
+      const key = `choice:${state.currentEvent.id}`.slice(0, 160)
+      const entry = {
+        id: `choice-${state.year}-${hash(`${item.id}:${state.currentEvent.id}`).toString(36)}`,
+        year: state.year, source: 'experience' as const, key,
+        reason: `你选择「${choice.label}」，一起经历了「${state.currentEvent.title}」。`.slice(0, 240),
+        closenessDelta: closeness - item.closeness, trustDelta: trust - item.trust,
+      }
+      relationshipHistory = [...(relationshipHistory ?? []).filter(previous => previous.key !== key), entry].slice(-16)
+    }
+    return { ...item, role, closeness, trust, mood, memories: memories.slice(-12), messages: [...item.messages], ...(relationshipHistory ? { relationshipHistory } : {}), ...(strain !== undefined ? { relationshipStrain: strain } : {}) }
   })
   return { ...state, stats, people }
 }
@@ -421,6 +439,7 @@ export function advanceYear(state: GameState, choiceId?: string, options: { mort
   if ((age === 26 || age === 62) && !people.some(item => item.id === 'neighbor')) people.push(person('neighbor', ['唐时雨', '陆星河', '叶闻溪'][state.config.seed % 3]!, age < 60 ? '新朋友' : '邻居', age + 1, '热心，幽默，喜欢和别人一起把日子过得有趣', 4))
   const resolved: LifeEvent = { ...state.currentEvent, kind: choice ? 'choice' : state.currentEvent.kind, description: `${state.currentEvent.description}${choice ? `\n你选择了：${choice.label}。` : ''}${departures.length ? `\n${departures.join('\n')}` : ''}`.slice(0, 3400), choices: [] }
   let next: GameState = { ...applied, config: { ...state.config }, age, year: state.config.birthYear + age, stats, people, history: [...state.history, resolved], turn: state.turn + 1, ended: options.mortality !== 'external' && (age >= 90 || stats.health <= 0), worldMessages: [...state.worldMessages] }
+  next = settleCommitments(next)
   if (next.ended) next.ending = makeEnding(next)
   next.currentEvent = makeEvent(next)
   if (options.world !== 'external') {
@@ -431,7 +450,7 @@ export function advanceYear(state: GameState, choiceId?: string, options: { mort
   return next
 }
 
-export function interact(state: GameState, personId: string, message: string, reply?: string): GameState {
+export function interact(state: GameState, personId: string, message: string, reply?: string, reaction?: ChatReaction): GameState {
   const target = state.people.find(item => item.id === personId)
   if (!target) throw new Error('这位人物已经不在当前时间线里。')
   if (!isPresent(target)) throw new Error('这段对话已经成为回忆。你仍可以翻看共同的记忆。')
@@ -439,7 +458,8 @@ export function interact(state: GameState, personId: string, message: string, re
   const text = clean(message, '', 1200)
   if (!text) throw new Error('写下一句话，再开始对话。')
   const random = randomFor(state.config.seed, `chat-${personId}-${state.turn}-${target.messages.at(-1)?.id ?? ''}-${text}`)
-  const harsh = /笨蛋|滚开|闭嘴|废物|去死|\bidiot\b|\bstupid\b/i.test(text)
+  const interpreted = classifyReaction(text, reaction)
+  const harsh = interpreted.intent === 'hostility'
   const lines = target.age < 13 ? ['我也想和你说这件事！下次我们一起试试吧。', '我还没想好，不过你愿意听我说，我很开心。', '那我们慢慢来！你还记得上次一起玩的时候吗？'] : [
     `听到你说这些，我想起我们一起经历过的事。${target.memories.length ? '那些小事我一直记着。' : '也许可以先从一件小事开始，不用一次想清所有答案。'}`,
     '我想先听听你的感受。你最在意的那一部分是什么？只要你愿意，我们可以慢慢聊。',
@@ -449,11 +469,15 @@ export function interact(state: GameState, personId: string, message: string, re
   const response = clean(reply, harsh ? '这句话让我有些难受。我愿意继续聊，也希望我们可以好好说话。' : lines[Math.floor(random() * lines.length)]!, 2000)
   const token = hash(`${target.messages.at(-1)?.id ?? state.id}-${personId}-${text}-${response}-${state.year}`).toString(36)
   const updated: Person = {
-    ...target, closeness: clamp(target.closeness + (harsh ? -3 : 2)), trust: clamp(target.trust + (harsh ? -4 : 2)), mood: harsh ? '需要一点空间' : '愿意继续聊聊',
+    ...target,
     memories: [...target.memories, `${state.year}年，你和我聊起「${text.slice(0, 100)}」。${harsh ? '有些话伤到了彼此，需要重新建立信任。' : ''}`].slice(-12),
     messages: [...target.messages, { id: `chat-${token}-u`, role: 'user' as const, text, year: state.year }, { id: `chat-${token}-a`, role: 'assistant' as const, text: response, year: state.year }].slice(-40),
   }
-  return evolveWorld({ ...state, worldUpdatedYear: state.year, stats: { ...state.stats, happiness: clamp(state.stats.happiness + (harsh ? -1 : 1)) }, people: state.people.map(item => item.id === personId ? updated : item) })
+  return evolveWorld(applyChatReaction({ ...state, worldUpdatedYear: state.year, people: state.people.map(item => item.id === personId ? updated : item) }, personId, text, interpreted))
+}
+
+export function performRelationshipAction(state: GameState, personId: string, action: RelationshipAction): GameState {
+  return evolveWorld({ ...applyRelationshipAction(state, personId, action), worldUpdatedYear: state.year })
 }
 
 export function setFocus(state: GameState, focus: Focus): GameState {
@@ -486,7 +510,7 @@ export function applyGeneratedEvent(state: GameState, event: LifeEvent, worldMes
     return [{ id: state.currentEvent.choices[index]?.id ?? `${state.currentEvent.id}-choice-${index + 1}`, label, hint: clean(item.hint, '每个选择都会留下不同的回响', 160), effects, ...(related ? { personId: related, relationshipDelta: integer(item.relationshipDelta, 0, -15, 15) } : {}) }]
   }) : []
   // The model can enrich a milestone's prose; explicit relationship decisions remain engine-owned.
-  const protectedChoices = state.currentEvent.choices.some(choice => relationshipAction(choice) || choice.id.startsWith('sim:') || choice.id.startsWith('world:'))
+  const protectedChoices = state.currentEvent.choices.some(choice => relationshipAction(choice) || choice.id.startsWith('sim:') || choice.id.startsWith('world:') || choice.id.startsWith('surprise:mmr:'))
   const currentEvent: LifeEvent = { ...state.currentEvent, title: clean(incoming.title, state.currentEvent.title, 140), description: clean(incoming.description, state.currentEvent.description, 3000), choices: !protectedChoices && choices.length >= 2 ? choices : state.currentEvent.choices, source: 'deepseek' }
   const messages: WorldMessage[] = Array.isArray(worldMessages) ? worldMessages.slice(0, 7).flatMap((item: unknown, index: number): WorldMessage[] => {
     if (!record(item)) return []
@@ -519,6 +543,7 @@ export function isGameState(value: unknown): value is GameState {
     if (!Array.isArray(value.people) || value.people.length < 1 || value.people.length > 12 || !Array.isArray(value.history) || value.history.length !== value.turn || !Array.isArray(value.worldMessages) || value.worldMessages.length > 40) return false
     const peopleValid = value.people.every((person: unknown) => {
       if (!record(person) || !boundedString(person.id, 160) || !boundedString(person.name, 60) || !boundedString(person.role, 60) || !boundedNumber(person.age, 0, 125, true) || !boundedString(person.personality, 180) || !boundedNumber(person.closeness, 0, 100) || !boundedNumber(person.trust, 0, 100) || !boundedString(person.mood, 80) || !boundedNumber(person.avatar, 0, 20, true) || !Array.isArray(person.memories) || person.memories.length > 12 || !person.memories.every(memory => boundedString(memory, 240)) || !Array.isArray(person.messages) || person.messages.length > 40) return false
+      if (!validateRelationshipData(person, config.birthYear as number, value.year as number)) return false
       if (person.role.includes('伴侣') && ((value.age as number) < 18 || person.age < 18)) return false
       return person.messages.every((message: unknown) => record(message) && boundedString(message.id, 180) && (message.role === 'user' || message.role === 'assistant') && boundedString(message.text, 2000) && boundedNumber(message.year, config.birthYear as number, value.year as number, true)) && uniqueIds(person.messages as { id: string }[])
     })

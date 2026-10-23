@@ -32,7 +32,7 @@ test('trust, closeness, and recent hurt change the actual follow-up choices', ()
   assert.match(worldThreadEvent(changed(90, 90))!.choices[0]!.id, /engage$/)
   assert.match(worldThreadEvent(changed(10, 10))!.choices[0]!.id, /repair$/)
   const hurt = changed(90, 90)
-  hurt.people[0]!.messages.push({ id: 'hurt', role: 'user', year: state.year, text: '闭嘴' })
+  hurt.people[0]!.relationshipHistory = [{ id: 'hurt', year: state.year, source: 'chat', key: 'hurt', reason: '直接攻击伤害信任', closenessDelta: -5, trustDelta: -7 }]
   assert.equal(evolveWorld(hurt).worldThreads![0]!.direction, 'conflict')
 })
 

@@ -182,7 +182,8 @@ test('migration retains origin, education, family, and assets while wages change
   assert.equal(destination.simulation.birth.countryId, 'NGA')
   assert.equal(destination.simulation.currentCountryId, 'JPN')
   assert.equal(destination.simulation.education, original.simulation.education)
-  assert.deepEqual(destination.state.people, original.state.people)
+  assert.deepEqual(destination.state.people.map(p => [p.id, p.name, p.role]), original.state.people.map(p => [p.id, p.name, p.role]))
+  assert.deepEqual(destination.state.people.filter(p => p.id !== 'friend'), original.state.people.filter(p => p.id !== 'friend'))
   assert.ok(destination.simulation.economy.cash < original.simulation.economy.cash)
   const next = advanceSimulation(destination.state, destination.simulation, choose(destination))
   const stayed = advanceSimulation(original.state, original.simulation, choose(original))
@@ -525,7 +526,7 @@ test('travel and migration introduce bounded local contacts without replacing ex
     const retained = result.state.people.find(person => person.id === old.id)!
     assert.equal(retained.name, old.name)
     assert.deepEqual(retained.messages, old.messages)
-    assert.deepEqual(retained.memories, old.memories)
+    assert.ok(old.memories.every(memory => retained.memories.includes(memory)))
   }
   assert.ok(result.state.people.length <= 12)
   assert.equal(result.state.year, year)
@@ -552,4 +553,48 @@ test('world intelligence zero preserves all immediate economic actions while sup
   assert.deepEqual(lowMove.simulation.economy, highMove.simulation.economy)
   assert.equal(lowMove.state.worldThreads, undefined)
   assert.equal(lowMove.state.people.length, quiet.people.length)
+})
+
+test('social spending changes its participant only and repeated activities do not farm happiness', () => {
+  const original = survivingSeed()
+  const funded = { ...original.simulation, economy: { ...original.simulation.economy, cash: 1000000 } }
+  const first = spend(funded, original.state, 'social', 100)
+  const friendBefore = original.state.people.find(p => p.id === 'friend')!
+  const friendAfter = first.state.people.find(p => p.id === 'friend')!
+  assert.ok(friendAfter.closeness >= friendBefore.closeness)
+  assert.ok(friendAfter.relationshipHistory?.some(h => h.source === 'experience'))
+  for (const person of original.state.people.filter(p => p.id !== 'friend')) assert.deepEqual(first.state.people.find(p => p.id === person.id), person)
+  const repeated = spend(first.simulation, first.state, 'social', 100)
+  assert.equal(repeated.state.stats.happiness, first.state.stats.happiness)
+  assert.equal(repeated.state.people.find(p => p.id === 'friend')!.closeness, friendAfter.closeness)
+  assert.equal(first.simulation.economy.cash - repeated.simulation.economy.cash, 100)
+})
+
+test('overseas travel uses destination contacts and per-destination experience without moving home', () => {
+  const base = until(createSimulation({ seed: 918, countryId: 'JPN', birthYear: 2000 }), 18)
+  base.simulation.economy.cash = 1e6
+  base.state.stats.happiness = 30
+  const india = spend(base.simulation, base.state, 'travel', 100, 'IND')
+  const indian = india.state.people.find(p => p.id === `contact-${base.state.year}-IND`)!
+  assert.ok(indian)
+  assert.match(indian.name, / (Sharma|Patel|Das|Kumar)$/)
+  assert.ok(indian.memories.some(m => m.includes('印度')))
+  assert.ok(indian.relationshipYear?.keys.includes('experience:travel:IND'))
+  const repeat = spend(india.simulation, india.state, 'travel', 100, 'IND')
+  assert.deepEqual(repeat.state.stats, india.state.stats)
+  assert.equal(repeat.state.people.find(p => p.id === indian.id)!.closeness, indian.closeness)
+  const japan = spend(repeat.simulation, repeat.state, 'travel', 100, 'JPN')
+  assert.ok(japan.state.stats.happiness > repeat.state.stats.happiness)
+  for (const r of [india, repeat, japan]) {
+    assert.equal(r.simulation.currentCountryId, 'JPN')
+    assert.deepEqual(r.simulation.birth, base.simulation.birth)
+    assert.equal(r.state.config.location, base.state.config.location)
+  }
+  const myanmar = spend(base.simulation, base.state, 'travel', 100, 'MMR')
+  const local = myanmar.state.people.find(p => p.id === `contact-${base.state.year}-MMR`)!
+  assert.ok(local)
+  assert.ok(local.memories.some(m => m.includes('缅甸')))
+  assert.ok(local.relationshipYear?.keys.includes('experience:travel:MMR'))
+  assert.equal(myanmar.simulation.currentCountryId, 'JPN')
+  assert.deepEqual(myanmar.simulation.birth, base.simulation.birth)
 })

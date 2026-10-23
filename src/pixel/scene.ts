@@ -19,6 +19,8 @@ export interface ScenePerson {
   self: boolean
 }
 export interface SceneModel {
+  kind: 'home' | 'crisis' | 'memorial'
+  summary: string
   age: number
   year: number
   countryId: string
@@ -97,6 +99,7 @@ export function deriveSceneModel(state?: GameState, simulation?: Simulation, dar
     ? simulation.economy.homeValue > 300_000 ? 'villa' : 'house'
     : quintile >= 5 ? 'villa' : quintile <= 1 ? 'hut' : urban ? 'flat' : 'cottage'
   const ended = state?.ended ?? false
+  const crisis = !ended && !!simulation?.crisis && simulation.crisis.phase !== 'resolved'
   const happiness = state?.stats.happiness ?? 76
   const occupation = simulation?.occupation ?? ''
   const student = simulation ? occupation === '学生' : age >= 6 && age < 18
@@ -111,16 +114,20 @@ export function deriveSceneModel(state?: GameState, simulation?: Simulation, dar
   ]
   // Partners and children stay visible even in unusually large extended households.
   family.sort((a, b) => Number(/伴侣|孩子|女儿|儿子/.test(b.role)) - Number(/伴侣|孩子|女儿|儿子/.test(a.role)))
-  const people = [...(ended ? [] : [self]), ...family].slice(0, 10)
+  const people = crisis ? [self] : [...(ended ? [] : [self]), ...family].slice(0, 10)
   const countryName = simulation ? country.name : state?.config.location ?? '中国'
   const climate = TROPICAL.has(countryId) ? 'tropical' : ARID.has(countryId) ? 'arid' : COLD.has(countryId) ? 'cold' : 'temperate'
   const household = people.length ? people.map(person => `${person.name}（${person.role}，${person.age}岁）`).join('、') : '安静的小院'
+  const summary = crisis ? '封闭的房间 · 窗外微光被阻隔 · 你独自等待转机'
+    : ended ? '记忆里的家 · 共同的记忆'
+      : `${HOME_NAMES[home]} · ${simulation?.crisis?.outcome === 'injured' ? '回家休养' : people.length > 1 ? `画面中 ${people.length - 1} 位家人` : '独自生活'}`
   return {
+    kind: ended ? 'memorial' : crisis ? 'crisis' : 'home', summary,
     age, year: state?.year ?? 1997, countryId, countryName, urban, home, climate,
     time: ended || age >= 60 ? 'evening' : age < 13 ? 'morning' : 'day',
     weather: happiness < 35 ? 'overcast' : happiness > 70 ? 'sunny' : 'clear',
     prop, people, ended, dark, seed,
-    caption: `${countryName} · ${urban ? '城市' : '乡村'} · ${HOME_NAMES[home]}。${ended ? '记忆里的家，' : ''}${household}。`,
+    caption: crisis ? `虚构隐藏剧情。${summary}。${household}。` : `${countryName} · ${urban ? '城市' : '乡村'} · ${HOME_NAMES[home]}。${ended ? '记忆里的家，' : ''}${household}。`,
   }
 }
 
@@ -373,6 +380,32 @@ function sceneProp(r: Raster, model: SceneModel) {
 }
 
 export function renderScene(model: SceneModel): PixelFrame {
+  if (model.kind === 'crisis' && !model.ended) {
+    const r = new Raster(SCENE_WIDTH, SCENE_HEIGHT, C.ink)
+    // A closed room and a high, obstructed window keep the crisis visually distinct.
+    r.rect(8, 5, 176, 41, C.windowShade)
+    r.rect(8, 5, 8, 41, C.trousers)
+    r.rect(176, 5, 8, 41, C.trousers)
+    r.rect(0, 46, SCENE_WIDTH, 14, C.trousers)
+    r.rect(8, 46, 176, 2, C.ink)
+    r.rect(137, 10, 29, 20, C.ink)
+    r.rect(140, 13, 23, 14, C.wallShadow)
+    r.rect(140, 13, 23, 4, C.window)
+    for (let x = 144; x < 163; x += 6) r.rect(x, 12, 2, 16, C.ink)
+    r.rect(139, 20, 25, 2, C.ink)
+    r.rect(136, 30, 31, 2, C.trousers)
+    r.rect(27, 14, 24, 32, C.ink)
+    r.rect(29, 16, 20, 30, C.trousers)
+    r.rect(29, 45, 20, 1, C.windowShade)
+    r.rect(130, 40, 31, 2, C.wallShadow)
+    r.rect(129, 42, 33, 3, C.wood)
+    r.rect(131, 45, 2, 5, C.ink)
+    r.rect(158, 45, 2, 5, C.ink)
+    // Only sprites actually drawn create interactive hitboxes.
+    const self = model.people.find(person => person.self)
+    if (self) drawPerson(r, self, 91, 51)
+    return r.frame
+  }
   const night = model.dark, dusk = model.time === 'evening', grey = model.weather === 'overcast'
   const sky = rgb(night ? '#304553' : grey ? '#d2dce2' : dusk ? '#e7cfca' : model.time === 'morning' ? '#dceaf3' : '#cfe4f1')
   const r = new Raster(SCENE_WIDTH, SCENE_HEIGHT, sky)

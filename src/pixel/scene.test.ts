@@ -1,10 +1,66 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import { createSimulation } from '../simulation/core.ts'
 import { deriveSceneModel, personAppearance, renderPortrait, renderScene, SCENE_HEIGHT, SCENE_WIDTH } from './scene.ts'
 
 const initial = createSimulation({ seed: 1917, countryId: 'CHN' })
 const copy = () => structuredClone(initial)
+
+test('normal home retains its existing pixel snapshot', () => {
+  const { state, simulation } = copy()
+  const frame = renderScene(deriveSceneModel(state, simulation))
+  assert.equal(createHash('sha256').update(frame.pixels).digest('hex'), '85b8a91623d497a3cc5926792803be53a24346c904e0f00a74f493d331dcd0ba')
+})
+
+test('all active crisis stages show the same closed room with only the protagonist', () => {
+  const { state, simulation } = copy()
+  state.age = 25
+  state.stats.happiness = 90
+  const home = renderScene(deriveSceneModel(state, simulation))
+  simulation.crisis = { phase: 'captive', fatalRoute: true, visit: 1, history: [], injured: false, resumeEvent: state.currentEvent }
+  const before = JSON.stringify({ state, simulation })
+  const model = deriveSceneModel(state, simulation)
+  const captive = renderScene(model)
+  assert.equal(model.kind, 'crisis')
+  assert.match(model.summary, /封闭.*阻隔/)
+  assert.doesNotMatch(model.caption, /住宅|公寓|母亲|父亲/)
+  assert.deepEqual(captive.people.map(person => person.id), ['self'])
+  assert.notDeepEqual(captive.pixels, home.pixels)
+  assert.deepEqual(captive, renderScene(deriveSceneModel(state, simulation)))
+  assert.equal(JSON.stringify({ state, simulation }), before)
+  assert.ok(captive.pixels.every((value, index) => index % 4 !== 3 || value === 255))
+  // Even a stale household on a manually constructed model cannot create hidden hotspots.
+  assert.deepEqual(renderScene({ ...model, people: [...model.people, { id: 'mother', name: '家人', age: 50, role: '母亲', self: false }] }).people, captive.people)
+  for (const phase of ['help', 'escape'] as const) {
+    simulation.crisis.phase = phase
+    assert.equal(deriveSceneModel(state, simulation).kind, 'crisis')
+    assert.deepEqual(renderScene(deriveSceneModel(state, simulation)), captive)
+    assert.deepEqual(renderScene(deriveSceneModel(state, simulation, true)), captive)
+  }
+})
+
+test('resolved survivors return home and death keeps memorial priority over an active crisis', () => {
+  const { state, simulation } = copy()
+  state.age = 25
+  const home = renderScene(deriveSceneModel(state, simulation))
+  for (const outcome of ['rescued', 'injured'] as const) {
+    simulation.crisis = { phase: 'resolved', fatalRoute: false, outcome, visit: 1, history: [], injured: outcome === 'injured', resumeEvent: state.currentEvent }
+    const model = deriveSceneModel(state, simulation)
+    assert.equal(model.kind, 'home')
+    assert.deepEqual(renderScene(model), home)
+    if (outcome === 'injured') assert.match(model.summary, /休养/)
+  }
+  state.ended = true
+  delete simulation.crisis
+  const memorial = renderScene(deriveSceneModel(state, simulation))
+  simulation.crisis = { phase: 'escape', fatalRoute: true, visit: 1, history: [], injured: false, resumeEvent: state.currentEvent }
+  const model = deriveSceneModel(state, simulation)
+  assert.equal(model.kind, 'memorial')
+  assert.equal(model.prop, 'memorial')
+  assert.deepEqual(renderScene(model), memorial)
+  assert.ok(memorial.people.every(person => !person.self))
+})
 
 test('scene is deterministic, immutable and completely paints the native canvas', () => {
   const { state, simulation } = copy()

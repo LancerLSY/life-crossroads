@@ -1,3 +1,5 @@
+import { crisisActive, resolveMyanmarDecision, validateMyanmarData, visitMyanmar } from './myanmar.ts'
+import { relationshipEffect } from '../game/relationships.ts'
 import { evolveWorld, recordWorldAction, worldThreadEvent } from '../game/world.ts'
 import { advanceYear, createLife, resolveChoice } from '../game/engine.ts'
 import type { Choice, Focus, GameState, LifeEvent, Person } from '../game/types.ts'
@@ -416,12 +418,14 @@ function copySimulation(previous: Simulation): Simulation {
 
 /** Resolve a pending decision without moving the simulated clock or settling an annual budget. */
 export function resolveSimulationDecision(original: GameState, previous: Simulation, choiceId: string): SimulationResult {
+  if (crisisActive(previous) || choiceId.startsWith('surprise:mmr:')) return resolveMyanmarDecision(original, previous, choiceId)
   // Engine validation rejects stale IDs before any simulation or cash mutations occur.
   const resolved = resolveChoice(original, choiceId)
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)!
   const simulation = copySimulation(previous)
   const applied = consequences(resolved, simulation, choice, original.age)
   applied.state = evolveWorld(applied.state)
+  if (simulation.myanmarInjury) applied.state = { ...applied.state, stats: { ...applied.state.stats, health: Math.min(applied.state.stats.health, 65) } }
   if (applied.cost > 0) charge(simulation, applied.cost, true)
   if (applied.incomeFactor !== 1) simulation.pendingIncomeFactor = (simulation.pendingIncomeFactor ?? 1) * applied.incomeFactor
   simulation.relationships = relationshipScore(applied.state)
@@ -459,6 +463,7 @@ function localizeNewContacts(state: GameState, original: GameState, simulation: 
 
 function step(original: GameState, previous: Simulation, choiceId?: string, weightedFocus?: FocusWeights): SimulationResult {
   if (original.ended) return { state: original, simulation: previous }
+  if (crisisActive(previous)) throw new Error('请先处理当前隐藏危机。')
   const simulation = copySimulation(previous)
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)
   const weights = focusWeights(original, weightedFocus)
@@ -482,6 +487,7 @@ function step(original: GameState, previous: Simulation, choiceId?: string, weig
     knowledge: Math.round(clamp(original.stats.knowledge + learning + weights.study * 2 + (choice?.effects.knowledge ?? 0) * .65 - (state.age >= 80 ? 1.3 : 0))),
     wealth: Math.round(clamp(35 + Math.log1p(Math.max(0, netWorth(simulation)) / Math.max(1, country.gdp)) * 18 - Math.min(30, simulation.economy.debt / Math.max(1, country.gdp) * 7))),
   } }
+  if (simulation.myanmarInjury) state = { ...state, stats: { ...state.stats, health: Math.min(state.stats.health, 65) } }
   state = familyMortality(state, simulation)
   simulation.relationships = relationshipScore(state)
   const ending = mortality(state, simulation, country)
@@ -515,6 +521,7 @@ export function secondsPerYear(simulation: Simulation): number {
 }
 
 export function setInvestment(previous: Simulation, policy: InvestmentPolicy): Simulation {
+  if (crisisActive(previous)) throw new Error('请先处理当前隐藏危机。')
   if (!POLICIES.includes(policy)) throw new Error('请选择有效的投资政策。')
   if ((previous.years.at(-1)?.age ?? 0) < 18) throw new Error('成年后可以管理投资。')
   if (previous.economy.policy === policy) return previous
@@ -542,9 +549,9 @@ function charge(simulation: Simulation, amount: number, allowDebt = false): void
 
 // Keep space for future engine contacts and up to three children. Never evict a
 // family member or an existing relationship just to introduce an action contact.
-function actionContact(state: GameState, simulation: Simulation, kind: 'travel' | 'social' | 'migrate'): { state: GameState; personId?: string } {
+function actionContact(state: GameState, simulation: Simulation, kind: 'travel' | 'social' | 'migrate', visitCountryId = simulation.currentCountryId): { state: GameState; personId?: string } {
   if (state.config.intelligence <= 0) return { state }
-  const id = `contact-${state.year}-${simulation.currentCountryId}`
+  const id = `contact-${state.year}-${visitCountryId}`
   const existing = state.people.find(person => person.id === id)
   if (existing) return { state, ...(present(existing) ? { personId: existing.id } : {}) }
   const reserved = Math.max(0, 3 - simulation.children)
@@ -553,17 +560,20 @@ function actionContact(state: GameState, simulation: Simulation, kind: 'travel' 
   if (state.people.length + reserved >= 12) return { state }
   const random = rng(simulation.config.seed, id)
   const role = kind === 'migrate' ? '新邻里朋友' : kind === 'travel' ? '旅途中认识的朋友' : '活动中认识的朋友'
-  const person: Person = { id, name: makeName(simulation.currentCountryId, random() < .488 ? '女' : '男', random), role,
+  const person: Person = { id, name: makeName(visitCountryId, random() < .488 ? '女' : '男', random), role,
     age: Math.min(99, state.age), personality: '有自己的生活与兴趣，愿意从具体的小事慢慢了解彼此', closeness: 42, trust: 52,
-    mood: '期待下一次交流', avatar: 4, memories: [`${state.year}年，在${countryById(simulation.currentCountryId).name}与你相识。`], messages: [] }
+    mood: '期待下一次交流', avatar: 4, memories: [`${state.year}年，在${countryById(visitCountryId).name}与你相识。`], messages: [] }
   return { state: { ...state, people: [...state.people, person] }, personId: person.id }
 }
 
-export function spend(previous: Simulation, original: GameState, action: 'health' | 'travel' | 'social' | 'study' | 'home' | 'repay' | 'invest', amount?: number): SimulationResult {
+export function spend(previous: Simulation, original: GameState, action: 'health' | 'travel' | 'social' | 'study' | 'home' | 'repay' | 'invest', amount?: number, destinationCountryId?: string): SimulationResult {
+  if (crisisActive(previous)) throw new Error('请先处理当前隐藏危机。')
+  if (destinationCountryId !== undefined && (action !== 'travel' || !COUNTRIES.some(country => country.id === destinationCountryId))) throw new Error('请选择受支持的旅行目的地。')
   if (original.ended) throw new Error('这一生已结束，记录保留供回看。')
   if (original.age < 6) throw new Error('长大一些后，可以安排自己的支出。')
   const simulation: Simulation = { ...previous, economy: { ...previous.economy }, years: [...previous.years] }
   let state = { ...original, stats: { ...original.stats } }
+  const experienceCountryId = action === 'travel' ? destinationCountryId ?? simulation.currentCountryId : simulation.currentCountryId
   const country = conditions(simulation, state.year)
   const requested = amount === undefined ? country.gdp * (action === 'health' ? .025 : .015) : amount
   if (!Number.isFinite(requested) || requested <= 0 || requested > 1e12) throw new Error('请输入有效金额。')
@@ -590,24 +600,32 @@ export function spend(previous: Simulation, original: GameState, action: 'health
     simulation.economy.investments = money(simulation.economy.investments + value)
   } else {
     charge(simulation, value)
-    const impact = clamp(value / Math.max(1, country.gdp) * 100, 0, 8)
+    const repeatedExperience = (action === 'social' || action === 'travel') && state.people.some(person => person.relationshipYear?.year === state.year && person.relationshipYear.keys.includes(`experience:${action}:${experienceCountryId}`))
+    const impact = repeatedExperience ? 0 : clamp(value / Math.max(1, country.gdp) * 100, 0, 8)
     if (action === 'health') state.stats.health = clamp(state.stats.health + impact)
     if (action === 'study') state.stats.knowledge = clamp(state.stats.knowledge + impact)
     if (action === 'travel') { state.stats.happiness = clamp(state.stats.happiness + impact); state.stats.knowledge = clamp(state.stats.knowledge + impact * .3) }
     if (action === 'social') {
       state.stats.happiness = clamp(state.stats.happiness + impact * .6)
-      state.people = state.people.map(person => present(person) ? { ...person, closeness: clamp(person.closeness + impact * .5) } : person)
       simulation.relationships = relationshipScore(state)
     }
   }
-  const contact = action === 'travel' || action === 'social' ? actionContact(state, simulation, action) : { state }
-  state = recordWorldAction(contact.state, { kind: action, amount: money(previous.economy.cash - simulation.economy.cash), location: country.name, personId: contact.personId })
+  if (simulation.myanmarInjury) state.stats.health = Math.min(state.stats.health, 65)
+  const contact = action === 'travel' || action === 'social' ? actionContact(state, simulation, action, experienceCountryId) : { state }
+  state = contact.state
+  if (action === 'social' || action === 'travel') {
+    const participant = action === 'social' ? state.people.find(person => present(person) && (person.id === 'friend' || person.role === '伴侣'))?.id ?? contact.personId : contact.personId
+    if (participant) state = relationshipEffect(state, participant, `experience:${action}:${experienceCountryId}`, 'experience', action === 'social' ? '你们实际参加了一次聚会，留下共同经历。' : '你们在旅途中交流见闻，留下共同经历。', 2, 1)
+  }
+  state = recordWorldAction(state, { kind: action, amount: money(previous.economy.cash - simulation.economy.cash), location: action === 'travel' && destinationCountryId ? countryById(destinationCountryId).name : country.name, personId: contact.personId })
   simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, simulation.years.at(-1)?.marker)
+  if (action === 'travel' && destinationCountryId === 'MMR' && previous.currentCountryId !== 'MMR') return visitMyanmar(state, simulation, `travel:${state.year}:MMR`)
   return { state, simulation }
 }
 
 export function migrate(original: GameState, previous: Simulation, countryId: string): SimulationResult {
+  if (crisisActive(previous)) throw new Error('请先处理当前隐藏危机。')
   if (original.ended || original.age < 18) throw new Error('成年并独立生活后，才能决定跨国迁居。')
   if (!COUNTRIES.some(country => country.id === countryId)) throw new Error('请选择受支持的目的地。')
   if (countryId === previous.currentCountryId) throw new Error('你已经生活在这里。')
@@ -618,10 +636,13 @@ export function migrate(original: GameState, previous: Simulation, countryId: st
   simulation.currentCountryId = countryId
   // Credentials, children, family and assets persist; next year's wages use the destination.
   let state = { ...original, config: { ...original.config, location: country.name }, stats: { ...original.stats, happiness: clamp(original.stats.happiness - 3), knowledge: clamp(original.stats.knowledge + 3) }, currentEvent: { ...original.currentEvent, description: `${original.currentEvent.description}\n你迁居到了${country.name}，支付了${expense.toLocaleString()} PPP美元的搬迁费用。新的生活条件将从本年开始影响收入与风险。`.slice(0, 3000) } }
+  const oldFriend = state.people.find(person => person.id === 'friend' && present(person))
+  if (oldFriend) state = relationshipEffect(state, oldFriend.id, `experience:distance:${countryId}`, 'experience', `你迁居到${country.name}，与留在原地的老朋友见面变少，需要重新安排联系。`, -2, 0)
   const contact = actionContact(state, simulation, 'migrate')
   state = recordWorldAction(contact.state, { kind: 'migrate', amount: expense, location: country.name, personId: contact.personId })
   simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, 'move')
+  if (countryId === 'MMR') return visitMyanmar(state, simulation, `migrate:${state.year}:MMR`)
   return { state, simulation }
 }
 
@@ -652,7 +673,7 @@ export function validateSimulation(value: unknown): value is Simulation {
     if (!Array.isArray(value.years) || value.years.length < 1 || value.years.length > 111) return false
     const years = value.years
     if (!years.every((year, index) => isRecord(year) && year.age === index && year.year === (config.birthYear as number) + index && ['health', 'happiness', 'knowledge', 'relationships'].every(key => finite(year[key], 0, 100)) && finite(year.netWorth, -1e12, 3e12) && ['income', 'expenses', 'cash', 'investments', 'debt'].every(key => finite(year[key], 0, 1e12)) && countryId(year.countryId) && text(year.occupation, 80) && text(year.education, 80) && text(year.title, 140) && typeof year.alive === 'boolean' && (year.marker === undefined || ['birth', 'education', 'work', 'family', 'move', 'death'].includes(year.marker as string)))) return false
-    if (!Array.isArray(value.notes) || value.notes.length > 500 || !value.notes.every(note => isRecord(note) && finite(note.age, 0, years.length - 1, true) && text(note.text, 200, true))) return false
+    if (!Array.isArray(value.notes) || value.notes.length > 500 || !value.notes.every(note => isRecord(note) && finite(note.age, 0, years.length - 1, true) && text(note.text, 200, true) && (note.kind === undefined || note.kind === 'event'))) return false
     if (!Array.isArray(value.starred) || value.starred.length > 500 || !value.starred.every(id => text(id, 180)) || new Set(value.starred).size !== value.starred.length) return false
     if (!Array.isArray(value.reflectedAges) || !value.reflectedAges.every(age => REFLECTION_AGES.includes(age as number) && (age as number) < years.length) || new Set(value.reflectedAges).size !== value.reflectedAges.length || value.reflectionAge !== undefined && (!REFLECTION_AGES.includes(value.reflectionAge as number) || !value.reflectedAges.includes(value.reflectionAge) || value.reflectionAge !== years.length - 1)) return false
     if (value.cause !== undefined && !text(value.cause, 200)) return false
@@ -663,6 +684,7 @@ export function validateSimulation(value: unknown): value is Simulation {
       if (!isRecord(peer) || !text(peer.id, 100) || !text(peer.name, 60) || !countryId(peer.countryId) || !text(peer.countryName, 100) || !['女', '男'].includes(peer.sex as string) || !finite(peer.deathAge, 1, 110, true) || !text(peer.cause, 200) || !Array.isArray(peer.years) || peer.years.length !== peer.deathAge + 1) return false
       return peer.years.every((year, index) => isRecord(year) && year.age === index && finite(year.health, 0, 100) && finite(year.happiness, 0, 100) && text(year.occupation, 80) && finite(year.income, 0, 1e12) && year.alive === (index < (peer.deathAge as number)))
     }) || new Set(value.peers.map(peer => (peer as Peer).id)).size !== 4) return false
+    if (!validateMyanmarData(value as unknown as Simulation)) return false
     return true
   } catch { return false }
 }
