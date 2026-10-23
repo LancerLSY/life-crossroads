@@ -66,7 +66,7 @@ test('drawn lives begin at birth with valid human attributes and their full fami
     const parent = birth.parents[id]
     const person = state.people.find(person => person.id === id)
     assert.ok(parent.name.trim() && parent.occupation.trim())
-    assert.ok(parent.age >= 18 && parent.age <= 43)
+    assert.ok(parent.age >= 15 && parent.age <= 70)
     assert.equal(person?.name, parent.name)
     assert.equal(person?.age, parent.age)
   }

@@ -180,6 +180,31 @@ test('generated events sanitize unsafe input and preserve identity, time, and st
   assert.ok(isGameState(choose(next)))
 })
 
+test('generated NPC dialogue can address the protagonist without impersonation or changing time', () => {
+  const state = freeze(createLife({ name: '试玩角色', birthYear: 2000, startAge: 18, intelligence: 100, seed: 1847 }))
+  const friend = state.people.find(person => person.id === 'friend')!
+  const messages = [state.config.name, state.id, 'protagonist'].map(target => ({ id: 'incoming', speaker: friend.id,
+    target, text: '最近有个挺有意思的事，想找你聊聊。', year: 1900 }))
+  messages.push(...[
+    { speaker: state.config.name, target: friend.id }, { speaker: state.id, target: friend.id },
+    { speaker: friend.id, target: '未知人物' }, { speaker: friend.id, target: friend.name },
+  ].map(message => ({ ...message, id: 'invalid', text: '不应显示', year: 1900 })))
+  const next = applyGeneratedEvent(state, { ...state.currentEvent, id: 'forged', year: 1900, age: 0 }, messages)
+  const added = next.worldMessages.filter(message => message.id.includes('generated-world'))
+  assert.equal(added.length, 3)
+  assert.ok(added.every(message => message.speaker === friend.name && message.target === state.config.name && message.year === state.year))
+  for (const speaker of ['protagonist', 'player']) {
+    const rejected = applyGeneratedEvent(state, state.currentEvent, [{ id: 'invalid', speaker, target: friend.id, text: '不应替玩家发言', year: state.year }])
+    assert.deepEqual(rejected.worldMessages, state.worldMessages)
+  }
+  assert.equal(next.id, state.id)
+  assert.deepEqual(next.config, state.config)
+  assert.equal(next.currentEvent.id, state.currentEvent.id)
+  assert.equal(next.currentEvent.year, state.year)
+  assert.equal(next.currentEvent.age, state.age)
+  assert.ok(isGameState(next))
+})
+
 test('invalid generated choices fall back to the playable local event', () => {
   const state = createLife({ seed: 9 })
   for (const choices of [undefined, [], [null], [{ label: '只有一个选择' }]]) {
@@ -439,9 +464,12 @@ test('departed NPCs retain their memories and messages with an explicit historic
     { id: 'a', label: '保存回忆', hint: '妥善珍藏', effects: {}, personId: 'father', relationshipDelta: 10 },
     { id: 'b', label: '继续生活', hint: '慢慢前进', effects: {} },
   ] }
-  const enriched = applyGeneratedEvent(state, generated, [{ id: 'dead-speaker', speaker: father.name, target: 'friend', text: '不应生成新的发言', year: state.year }])
+  const enriched = applyGeneratedEvent(state, generated, [
+    { id: 'dead-speaker', speaker: father.name, target: state.config.name, text: '不应生成新的发言', year: state.year },
+    { id: 'dead-target', speaker: 'friend', target: father.id, text: '不应向已离世人物发言', year: state.year },
+  ])
   assert.ok(!enriched.currentEvent.choices.some(choice => choice.personId === father.id))
-  assert.ok(enriched.worldMessages.every(message => message.id !== 'dead-speaker'))
+  assert.deepEqual(enriched.worldMessages, state.worldMessages)
   assert.ok(isGameState(enriched))
 })
 
@@ -612,4 +640,46 @@ test('immediate outcome prose remains valid at the maximum narrative length', ()
   boundary.focus = 'career'
   boundary.currentEvent.choices[0]!.effects = { health: 25 }
   assert.equal(advanceYear(boundary, boundary.currentEvent.choices[0]!.id).stats.health, 100, 'bundled annual resolution keeps its original clamp behavior')
+})
+
+test('world choices resolve in place and model enrichment preserves their causal meaning', () => {
+  let state = createLife({ seed: 3, startAge: 19, intelligence: 100 })
+  for (let index = 0; index < 12 && !state.currentEvent.choices.some(choice => choice.id.startsWith('world:')); index++) state = choose(state)
+  assert.ok(state.currentEvent.choices.some(choice => choice.id.startsWith('world:')))
+  const snapshot = copy(state)
+  const enriched = applyGeneratedEvent(state, { ...state.currentEvent, title: '模型润色后的标题', choices: state.currentEvent.choices.map(choice => ({ ...choice, id: 'changed-' + choice.id, label: '改变决定', effects: { wealth: 20 } })) })
+  assert.deepEqual(enriched.currentEvent.choices, state.currentEvent.choices)
+  const choice = state.currentEvent.choices.find(choice => choice.id.endsWith(':close'))!
+  const resolved = resolveChoice(enriched, choice.id)
+  assert.equal(resolved.age, state.age)
+  assert.equal(resolved.worldThreads!.find(thread => choice.id === `world:${thread.id}:close`)!.status, 'resolved')
+  assert.deepEqual(state, snapshot)
+  assert.ok(isGameState(resolved))
+})
+
+test('chat changes a world follow-up without advancing stages or creating annual work', () => {
+  let state = createLife({ seed: 3, startAge: 19, intelligence: 100 })
+  for (let index = 0; index < 12 && !state.worldThreads?.some(thread => thread.status === 'active'); index++) state = choose(state)
+  const active = state.worldThreads!.find(thread => thread.status === 'active')!
+  const count = state.worldThreads!.length
+  const before = copy(state)
+  const chatted = interact(state, active.personId, '闭嘴')
+  const after = chatted.worldThreads!.find(thread => thread.id === active.id)!
+  assert.equal(after.direction, 'conflict')
+  assert.equal(after.stage, active.stage)
+  assert.equal(chatted.year, state.year)
+  assert.equal(chatted.worldThreads!.length, count)
+  assert.deepEqual(state, before)
+})
+
+test('world save fields reject unknown references and future nodes while legacy saves remain valid', () => {
+  let state = createLife({ seed: 3, startAge: 19, intelligence: 100 })
+  for (let index = 0; index < 12 && !state.worldThreads?.length; index++) state = choose(state)
+  assert.ok(isGameState(state))
+  assert.ok(isGameState({ ...state, worldThreads: undefined, worldUpdatedYear: undefined }))
+  const entry = state.worldThreads![0]!
+  for (const worldThreads of [[{ ...entry, personId: 'unknown' }], [{ ...entry, relatedThreadId: 'missing-thread' }], [{ ...entry, startedYear: state.year + 1 }], [{ ...entry, nextYear: state.year + 4 }], [{ ...entry, impact: {} }]]) {
+    assert.equal(isGameState({ ...state, worldThreads }), false)
+  }
+  assert.equal(isGameState({ ...state, worldUpdatedYear: state.year + 1 }), false)
 })

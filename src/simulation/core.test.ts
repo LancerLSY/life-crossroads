@@ -458,3 +458,98 @@ test('migration localizes only future contacts and preserves legacy names and co
   }
   assert.deepEqual(next, until(JSON.parse(JSON.stringify(migrated)) as SimulationResult, 26))
 })
+
+test('annual simulation carries world threads across forks and protects mandatory milestones', () => {
+  let result = createSimulation({ seed: 918, countryId: 'JPN', birthYear: 2000 })
+  result.state.config.intelligence = 100
+  result = until(result, 6)
+  assert.ok(result.state.currentEvent.choices.some(choice => choice.id === 'sim:school:primary'))
+  result = until(result, 20)
+  assert.ok(result.state.worldThreads?.length)
+  const snapshot = structuredClone(result)
+  const first = advanceSimulation(result.state, result.simulation, choose(result))
+  const replay = advanceSimulation(structuredClone(result.state), structuredClone(result.simulation), choose(result))
+  assert.deepEqual(first, replay)
+  assert.deepEqual(result, snapshot)
+  assert.equal(first.state.worldUpdatedYear, first.state.year)
+  for (const previous of result.state.worldThreads!.filter(thread => thread.status === 'active')) {
+    const next = first.state.worldThreads!.find(thread => thread.id === previous.id)
+    if (next) assert.ok(next.stage <= previous.stage + 1, 'annual wrapper must not advance a thread twice')
+  }
+  assert.ok(isGameState(first.state))
+})
+
+test('successful spending records each actual outlay as a distinct world cause; failures leave snapshots untouched', () => {
+  const original = until(createSimulation({ seed: 918, countryId: 'JPN' }), 25)
+  original.state.config.intelligence = 100
+  original.simulation.economy.cash = 1_000_000
+  original.simulation.economy.debt = 75
+  const snapshot = structuredClone(original)
+  for (const action of ['health', 'study', 'social', 'travel', 'home', 'repay', 'invest'] as const) {
+    const result = spend(original.simulation, original.state, action, 100)
+    const thread = result.state.worldThreads!.find(thread => thread.id.startsWith(`action-${action}-`))!
+    assert.ok(thread)
+    const actual = original.simulation.economy.cash - result.simulation.economy.cash
+    assert.match(thread.cause, new RegExp(actual.toLocaleString('en-US', { maximumFractionDigits: 2 }).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    assert.equal(result.state.age, original.state.age)
+    assert.ok(isGameState(result.state))
+  }
+  assert.deepEqual(original, snapshot)
+  const broke = { ...original, simulation: { ...original.simulation, economy: { ...original.simulation.economy, cash: 0 } } }
+  const before = structuredClone(broke)
+  for (const action of ['travel', 'social', 'home', 'invest', 'repay'] as const) assert.throws(() => spend(broke.simulation, broke.state, action, 100))
+  assert.deepEqual(broke, before)
+})
+
+test('travel and migration introduce bounded local contacts without replacing existing people or birth history', () => {
+  let result = until(createSimulation({ seed: 918, countryId: 'JPN' }), 25)
+  result.state.config.intelligence = 100
+  result.simulation.economy.cash = 1_000_000
+  const originalPeople = structuredClone(result.state.people)
+  const birth = structuredClone(result.simulation.birth)
+  const year = result.state.year
+  result = spend(result.simulation, result.state, 'travel', 100)
+  const contact = result.state.people.find(person => person.id.startsWith(`contact-${year}-JPN`))!
+  assert.ok(contact)
+  assert.match(contact.name, /^(佐藤|铃木|高桥|田中)/)
+  const count = result.state.people.length
+  for (let index = 0; index < 20; index++) result = spend(result.simulation, result.state, index % 2 ? 'social' : 'travel', 100)
+  assert.equal(result.state.people.length, count)
+  assert.ok(result.state.worldThreads!.length <= 9)
+  result = migrate(result.state, result.simulation, 'IND')
+  const neighbor = result.state.people.find(person => person.id === `contact-${year}-IND`)!
+  assert.ok(neighbor)
+  assert.match(neighbor.name, / (Sharma|Patel|Das|Kumar)$/)
+  assert.deepEqual(result.simulation.birth, birth)
+  for (const old of originalPeople) {
+    const retained = result.state.people.find(person => person.id === old.id)!
+    assert.equal(retained.name, old.name)
+    assert.deepEqual(retained.messages, old.messages)
+    assert.deepEqual(retained.memories, old.memories)
+  }
+  assert.ok(result.state.people.length <= 12)
+  assert.equal(result.state.year, year)
+  assert.match(result.state.worldThreads!.find(thread => thread.id.startsWith('action-migrate-'))!.cause, /印度/)
+  assert.ok(isGameState(result.state))
+})
+
+test('world intelligence zero preserves all immediate economic actions while suppressing extra stories and contacts', () => {
+  const original = until(createSimulation({ seed: 918, countryId: 'JPN' }), 25)
+  original.simulation.economy.cash = 1_000_000
+  original.simulation.economy.debt = 75
+  const quiet = { ...original.state, config: { ...original.state.config, intelligence: 0 }, worldThreads: undefined }
+  const active = { ...quiet, config: { ...quiet.config, intelligence: 100 } }
+  for (const action of ['health', 'study', 'social', 'travel', 'home', 'repay', 'invest'] as const) {
+    const low = spend(original.simulation, quiet, action, 100)
+    const high = spend(original.simulation, active, action, 100)
+    assert.deepEqual(low.simulation.economy, high.simulation.economy)
+    assert.deepEqual(low.state.stats, high.state.stats)
+    assert.equal(low.state.worldThreads, undefined)
+    assert.equal(low.state.people.length, quiet.people.length)
+  }
+  const lowMove = migrate(quiet, original.simulation, 'IND')
+  const highMove = migrate(active, original.simulation, 'IND')
+  assert.deepEqual(lowMove.simulation.economy, highMove.simulation.economy)
+  assert.equal(lowMove.state.worldThreads, undefined)
+  assert.equal(lowMove.state.people.length, quiet.people.length)
+})

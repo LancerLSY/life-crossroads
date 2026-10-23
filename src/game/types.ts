@@ -75,4 +75,20 @@ export interface GameState {
   ended: boolean
   ending?: string
   turn: number
+  worldThreads?: WorldThread[]
+  worldUpdatedYear?: number
+}
+
+export interface WorldThread {
+  id: string
+  personId: string
+  title: string
+  cause: string
+  stage: 1 | 2 | 3
+  status: 'active' | 'resolved'
+  direction: 'support' | 'distance' | 'conflict'
+  impact: string
+  startedYear: number
+  nextYear: number
+  relatedThreadId?: string
 }

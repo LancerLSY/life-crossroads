@@ -13,9 +13,10 @@ function WorldBackdrop() {
   return <img className="lottery-world-art" src="/assets/birth-world.png" alt="像素地球、星空与世界各地的城镇" width="1536" height="1024" fetchPriority="high"/>
 }
 
-export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume }: {
+export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume, initialIntelligence = 60 }: {
   onCreate: (config: Partial<FoundationConfig>) => boolean
   onSettings: () => void; hasSaved: boolean; onResume: () => void
+  initialIntelligence?: number
 }) {
   const currentYear = new Date().getFullYear()
   const [world, setWorld] = useState<World | 'any'>('present')
@@ -23,7 +24,7 @@ export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume }: {
   const [drawMode, setDrawMode] = useState<FoundationConfig['drawMode']>('birth')
   const [paceMinutes, setPace] = useState<FoundationConfig['paceMinutes']>(60)
   const [softMode, setSoftMode] = useState(true)
-  const [intelligence, setIntelligence] = useState(60)
+  const [intelligence, setIntelligence] = useState(initialIntelligence)
   const [drawing, setDrawing] = useState(false)
   const submitted = useRef(false)
   const [error, setError] = useState('')
@@ -74,7 +75,7 @@ export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume }: {
       </aside>
     </form>
     {error && <p className="inline-error" role="alert">{error}</p>}
-    <details className="lottery-odds"><summary>了解抽签概率</summary><p>{world === 'any' ? '以下为当代预览；抽中的年代会改变实际权重。' : `${previewYear} 年的抽签权重。`}出生地由概率抽取，不保证各地出现次数相同。</p><ol>{odds.map(country => <li key={country.id}><span>{country.name}</span><i style={{ width: `${country.share / odds[0]!.share * 100}%` }}/><strong>{(country.share * 100).toFixed(1)}%</strong></li>)}</ol><p>抽样在支持的 {COUNTRIES.length} 个国家与地区内归一化。依据 WDI 数据；历史插值与未来条件使用游戏模型。</p></details>
+    <details className="lottery-odds"><summary>了解抽签概率</summary><p>{world === 'any' ? '以下为当代预览；抽中的年代会改变实际权重。' : `${previewYear} 年的抽签权重。`}出生地由概率抽取，不保证各地出现次数相同。</p><ol>{odds.map(country => <li key={country.id}><span>{country.name}</span><i style={{ width: `${country.share / odds[0]!.share * 100}%` }}/><strong>{(country.share * 100).toFixed(1)}%</strong></li>)}</ol><p>抽样在支持的 {COUNTRIES.length} 个国家与地区内归一化。出生地依据 WDI 数据。家庭财富按 DHS 出生调查加权，并与出生次序、城乡和母亲年龄组联动；调查不足时使用明确标注的参考分布，出生登记中可查看来源与概率。</p></details>
   </main>
 }
 

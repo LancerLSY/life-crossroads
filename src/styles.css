@@ -295,6 +295,22 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .relationship-numbers span { display: inline-flex; align-items: center; gap: 5px; }
 .memory-block { display: flex; align-items: flex-start; gap: 8px; padding: 11px; background: var(--soft); border-radius: 3px; font-size: 12px; line-height: 1.8; }
 .memory-block svg { margin-top: 3px; color: var(--teal); }
+.world-threads h3 { display: flex; align-items: center; gap: 7px; font-size: 15px; }
+.world-threads > .section-heading { margin-bottom: 12px; }
+.world-thread { padding: 13px 0; border-top: 1px solid var(--line); }
+.world-thread header { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--muted); }
+.world-thread h4 { font-size: 14px; margin: 7px 0; line-height: 1.6; }
+.world-thread p, .world-thread-empty { font-size: 12px; line-height: 1.8; color: var(--muted); }
+.thread-direction { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--teal); margin: 10px 0 6px; }
+.world-thread.conflict .thread-direction { color: var(--accent); }
+.world-thread.distance .thread-direction { color: var(--gold); }
+.thread-stages { display: flex; gap: 3px; margin-left: auto; }
+.thread-stages i { width: 14px; height: 4px; background: var(--line); }
+.thread-stages i.filled { background: currentColor; }
+.world-thread .thread-impact { color: var(--ink); }
+.world-thread > small { display: block; color: var(--muted); font-size: 10px; margin-top: 7px; }
+.resolved-threads { border-top: 1px solid var(--line); padding-top: 10px; }
+.resolved-threads > summary { cursor: pointer; color: var(--teal); font-size: 12px; }
 .relationship-card > .text-button { margin-top: 9px; }
 .branch-section > .section-heading, .rewind-section > .section-heading { margin-bottom: 12px; }
 .timeline-entry { margin-top: 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }

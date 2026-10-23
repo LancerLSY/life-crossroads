@@ -1,3 +1,4 @@
+import { evolveWorld, validateWorldThreads, worldThreadEvent } from './world.ts'
 import type { Choice, Focus, GameState, LifeConfig, LifeEvent, Person, StatKey, Stats, WorldMessage } from './types.ts'
 
 export type { Choice, ChatMessage, Focus, GameState, LifeConfig, LifeEvent, Person, StatKey, Stats, WorldMessage } from './types.ts'
@@ -381,17 +382,17 @@ export function resolveChoice(state: GameState, choiceId: string): GameState {
   const choice = requireChoice(state, choiceId)
   const resolved = applyChoiceEffects(state, choice)
   const outcome = `\n你选择了：${choice.label}。`
-  return { ...resolved, currentEvent: { ...state.currentEvent, description: state.currentEvent.description.slice(0, 3000 - outcome.length) + outcome, choices: [] } }
+  return evolveWorld({ ...resolved, worldUpdatedYear: state.year, currentEvent: { ...state.currentEvent, description: state.currentEvent.description.slice(0, 3000 - outcome.length) + outcome, choices: [] } }, choice)
 }
 
-export function advanceYear(state: GameState, choiceId?: string, options: { mortality?: 'engine' | 'external' } = {}): GameState {
+export function advanceYear(state: GameState, choiceId?: string, options: { mortality?: 'engine' | 'external'; world?: 'engine' | 'external' } = {}): GameState {
   if (state.ended) return state
   if (state.age >= 110) throw new Error('这条时间线已经走到110岁，请由生命模拟完成这一生。')
   if (state.currentEvent.choices.length && choiceId === undefined) throw new Error('请先选择今年想走的方向。')
   const choice = choiceId === undefined ? undefined : requireChoice(state, choiceId)
   const annualStats = { ...focusEffects(state) }
   annualStats.health = (annualStats.health ?? 0) + (state.age >= 75 ? -3 : state.age >= 55 ? -2 : -1)
-  const applied = applyChoiceEffects(state, choice, { stats: annualStats, socialDrift: state.focus === 'social' ? 1 : 0 })
+  const applied = evolveWorld({ ...applyChoiceEffects(state, choice, { stats: annualStats, socialDrift: state.focus === 'social' ? 1 : 0 }), worldUpdatedYear: state.year }, choice)
   const stats = applied.stats
   const age = state.age + 1
   const departures: string[] = []
@@ -419,9 +420,13 @@ export function advanceYear(state: GameState, choiceId?: string, options: { mort
   }
   if ((age === 26 || age === 62) && !people.some(item => item.id === 'neighbor')) people.push(person('neighbor', ['唐时雨', '陆星河', '叶闻溪'][state.config.seed % 3]!, age < 60 ? '新朋友' : '邻居', age + 1, '热心，幽默，喜欢和别人一起把日子过得有趣', 4))
   const resolved: LifeEvent = { ...state.currentEvent, kind: choice ? 'choice' : state.currentEvent.kind, description: `${state.currentEvent.description}${choice ? `\n你选择了：${choice.label}。` : ''}${departures.length ? `\n${departures.join('\n')}` : ''}`.slice(0, 3400), choices: [] }
-  const next: GameState = { ...state, config: { ...state.config }, age, year: state.config.birthYear + age, stats, people, history: [...state.history, resolved], turn: state.turn + 1, ended: options.mortality !== 'external' && (age >= 90 || stats.health <= 0), worldMessages: [...state.worldMessages] }
+  let next: GameState = { ...applied, config: { ...state.config }, age, year: state.config.birthYear + age, stats, people, history: [...state.history, resolved], turn: state.turn + 1, ended: options.mortality !== 'external' && (age >= 90 || stats.health <= 0), worldMessages: [...state.worldMessages] }
   if (next.ended) next.ending = makeEnding(next)
   next.currentEvent = makeEvent(next)
+  if (options.world !== 'external') {
+    next = evolveWorld(next)
+    next.currentEvent = worldThreadEvent(next) ?? next.currentEvent
+  }
   next.worldMessages = [...next.worldMessages, ...worldDialogue(next)].slice(-40)
   return next
 }
@@ -448,7 +453,7 @@ export function interact(state: GameState, personId: string, message: string, re
     memories: [...target.memories, `${state.year}年，你和我聊起「${text.slice(0, 100)}」。${harsh ? '有些话伤到了彼此，需要重新建立信任。' : ''}`].slice(-12),
     messages: [...target.messages, { id: `chat-${token}-u`, role: 'user' as const, text, year: state.year }, { id: `chat-${token}-a`, role: 'assistant' as const, text: response, year: state.year }].slice(-40),
   }
-  return { ...state, stats: { ...state.stats, happiness: clamp(state.stats.happiness + (harsh ? -1 : 1)) }, people: state.people.map(item => item.id === personId ? updated : item) }
+  return evolveWorld({ ...state, worldUpdatedYear: state.year, stats: { ...state.stats, happiness: clamp(state.stats.happiness + (harsh ? -1 : 1)) }, people: state.people.map(item => item.id === personId ? updated : item) })
 }
 
 export function setFocus(state: GameState, focus: Focus): GameState {
@@ -481,15 +486,16 @@ export function applyGeneratedEvent(state: GameState, event: LifeEvent, worldMes
     return [{ id: state.currentEvent.choices[index]?.id ?? `${state.currentEvent.id}-choice-${index + 1}`, label, hint: clean(item.hint, '每个选择都会留下不同的回响', 160), effects, ...(related ? { personId: related, relationshipDelta: integer(item.relationshipDelta, 0, -15, 15) } : {}) }]
   }) : []
   // The model can enrich a milestone's prose; explicit relationship decisions remain engine-owned.
-  const protectedChoices = state.currentEvent.choices.some(choice => relationshipAction(choice) || choice.id.startsWith('sim:'))
+  const protectedChoices = state.currentEvent.choices.some(choice => relationshipAction(choice) || choice.id.startsWith('sim:') || choice.id.startsWith('world:'))
   const currentEvent: LifeEvent = { ...state.currentEvent, title: clean(incoming.title, state.currentEvent.title, 140), description: clean(incoming.description, state.currentEvent.description, 3000), choices: !protectedChoices && choices.length >= 2 ? choices : state.currentEvent.choices, source: 'deepseek' }
   const messages: WorldMessage[] = Array.isArray(worldMessages) ? worldMessages.slice(0, 7).flatMap((item: unknown, index: number): WorldMessage[] => {
     if (!record(item)) return []
     const speaker = state.people.find(person => isPresent(person) && (person.name === item.speaker || person.id === item.speaker))
     const target = state.people.find(person => isPresent(person) && (person.name === item.target || person.id === item.target))
+    const targetName = target?.name ?? (item.target === state.config.name || item.target === state.id || item.target === 'protagonist' ? state.config.name : undefined)
     const text = clean(item.text, '', 1000)
-    if (!speaker || !text || (item.target !== undefined && (!target || target.id === speaker.id))) return []
-    return [{ id: `${state.id}-generated-world-${state.turn}-${index}`, speaker: speaker.name, ...(target ? { target: target.name } : {}), text, year: state.year }]
+    if (!speaker || !text || (item.target !== undefined && (!targetName || targetName === speaker.name))) return []
+    return [{ id: `${state.id}-generated-world-${state.turn}-${index}`, speaker: speaker.name, ...(targetName ? { target: targetName } : {}), text, year: state.year }]
   }) : []
   const ids = new Set(messages.map(item => item.id))
   return { ...state, currentEvent, worldMessages: [...state.worldMessages.filter(item => !ids.has(item.id)), ...messages].slice(-40) }
@@ -517,6 +523,9 @@ export function isGameState(value: unknown): value is GameState {
       return person.messages.every((message: unknown) => record(message) && boundedString(message.id, 180) && (message.role === 'user' || message.role === 'assistant') && boundedString(message.text, 2000) && boundedNumber(message.year, config.birthYear as number, value.year as number, true)) && uniqueIds(person.messages as { id: string }[])
     })
     if (!peopleValid || !uniqueIds(value.people as { id: string }[])) return false
+    if (!validateWorldThreads(value.worldThreads, value.year as number, new Set((value.people as Person[]).map(person => person.id)))) return false
+    if (value.worldUpdatedYear !== undefined && !boundedNumber(value.worldUpdatedYear, config.birthYear + config.startAge, value.year as number, true)) return false
+    if (Array.isArray(value.worldThreads) && value.worldThreads.some(thread => thread.startedYear < (config.birthYear as number) + (config.startAge as number))) return false
     const peopleIds = new Set((value.people as Person[]).filter(isPresent).map(person => person.id))
     const validEvent = (event: unknown, historical: boolean): boolean => {
       if (!record(event) || !boundedString(event.id, 180) || !boundedNumber(event.age, config.startAge as number, value.age as number, true) || event.year !== (config.birthYear as number) + event.age || !['life', 'choice', 'relationship', 'world'].includes(event.kind as string) || !boundedString(event.title, 140) || !boundedString(event.description, historical ? 3400 : 3000) || !['local', 'deepseek'].includes(event.source as string) || !Array.isArray(event.choices) || event.choices.length > 6 || (historical && event.choices.length !== 0)) return false

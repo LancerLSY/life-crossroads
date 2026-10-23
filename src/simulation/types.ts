@@ -25,6 +25,22 @@ export interface BirthParent {
   occupation: string
 }
 
+export interface FamilySamplingMetadata {
+  version: 1
+  surveyId: string
+  surveyYear: number
+  sourceCountry: string
+  sourceURL: string
+  countryMatch: boolean
+  requestedYear: number
+  birthOrderGroup: '1' | '2' | '3' | '4' | '5+'
+  evidence: 'survey-proxy'
+  wealthProbabilities: number[]
+  urbanProbability: number
+  maternalAgeDistribution: { label: string; probability: number }[]
+  notes: string[]
+}
+
 export interface BirthRecord {
   countryId: string
   countryName: string
@@ -34,6 +50,8 @@ export interface BirthRecord {
   urban: boolean
   parents: { mother: BirthParent; father: BirthParent }
   siblings: number
+  /** Absent in legacy saves, which retain their original family. */
+  familySampling?: FamilySamplingMetadata
 }
 
 export interface Economy {

@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, Leaf, Sparkles } from 'lucide-react'
 import type { GameState } from '../game/types.ts'
 import PixelScene from './PixelScene'
 import PixelPortrait from './PixelPortrait'
+import FamilyEvidence from './FamilyEvidence'
 import { COUNTRIES, COUNTRY_DATA_METADATA, countryAt, countryById } from '../simulation/countries.ts'
 import { secondsPerYear, survivalAt } from '../simulation/core.ts'
 import type { InvestmentPolicy, Simulation, World } from '../simulation/types.ts'
@@ -46,6 +47,7 @@ export function BirthCertificate({ state, simulation, onBegin, onShare }: { stat
       <div className="certificate-identity"><PixelPortrait name={state.config.name} age={0} role="me" sex={birth.sex} size={80}/><div><h2>{state.config.name}</h2><p>{birth.sex === '女' ? '女孩' : '男孩'} <span>·</span> {country.name} <span>·</span> {birth.urban ? '城市' : '乡村'}</p></div><span className="certificate-year">{config.birthYear}<small>年出生</small></span></div>
       <div className="certificate-scene"><PixelScene state={state} simulation={simulation}/></div><dl className="certificate-facts"><div><dt>家庭条件</dt><dd>{birth.familyClass}<small>本地家庭资源第 {birth.familyQuintile} / 5 档</small></dd></div><div><dt>兄弟姐妹</dt><dd>{birth.siblings ? `${birth.siblings} 位` : '独生子女'}<small>家庭的相处从此刻开始</small></dd></div>{(['mother', 'father'] as const).map(role => <div key={role}><dt>{role === 'mother' ? '母亲' : '父亲'}</dt><dd>{birth.parents[role].name}<small>{birth.parents[role].age} 岁 · {birth.parents[role].occupation}</small></dd></div>)}</dl>
       <div className="birth-environment"><div><span>同地同性别预期寿命</span><strong>{expectancy.toFixed(1)}<small>年</small></strong><p>群体平均，个人结局由模拟决定</p></div><div><span>一岁前死亡风险</span><strong>{percentage(country.infantMortality / 1000, 2)}</strong><p>当地每千活产 {country.infantMortality.toFixed(1)} 人</p></div><div><span>当地人均 GDP · PPP</span><strong>{amountText(country.gdp)}</strong><p>国际元 / 年 · 不等于个人收入</p></div><div><span>随机落在这里的概率</span><strong>{percentage(chance, 2)}</strong><p>{config.countryId ? '本次指定了出生地；此处为随机基准' : config.drawMode === 'birth' ? '按支持地区年度出生人数加权' : '按支持地区总人口加权'}</p></div></div>
+      <FamilyEvidence birth={birth}/>
       <BirthComparison simulation={simulation} />
       <div className="certificate-peers"><h3>同一年，他们也来到这个世界</h3><p>四条独立的人生，将和你一起向前。</p><div>{simulation.peers.map(peer => <article key={peer.id}><PixelPortrait name={peer.name} age={0} sex={peer.sex} size={32}/><strong>{peer.name}</strong><small>{peer.countryName} · {peer.sex}</small></article>)}</div></div>
       <div className="certificate-start"><p>{WORLD_NAMES[config.world]} <span>·</span> 约 {Math.round(secondsPerYear(simulation))} 秒走过一年<br /><small>你可以随时暂停，慢慢做决定。</small></p><div><button className="secondary-button" onClick={onShare}>分享出生卡</button><button className="primary-button" onClick={onBegin}>开始这一生 <ArrowRight size={17} /></button></div></div>

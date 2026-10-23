@@ -57,6 +57,23 @@
 .reveal-skip { display: block; margin: 12px auto 0; min-height: 42px; padding: 10px 22px; color: #fff8ec; border: 1px solid #b9d4ca; background: #0c3948; font-size: 13px; }
 .reveal-content .draw-button { margin-top: 12px; }
 .reveal-note { text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 22px; }
+.family-evidence { margin-top: 20px; padding: 15px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; line-height: 1.8; }
+.family-evidence summary { color: var(--teal); cursor: pointer; font-weight: 600; }
+.family-evidence > summary span { display: inline-block; margin-left: 8px; font-size: 11px; color: var(--muted); font-weight: 400; }
+.family-evidence p { margin: 12px 0; color: var(--muted); }
+.family-evidence p strong { color: var(--ink); }
+.family-probabilities { display: grid; gap: 12px; margin: 16px 0; }
+.family-probabilities > div { display: flex; justify-content: space-between; position: relative; padding-bottom: 7px; gap: 12px; }
+.family-probabilities i { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--line-strong); }
+.family-probabilities .drawn { color: var(--accent); }
+.family-probabilities .drawn i { background: var(--accent); }
+.family-sampling-details { display: grid; gap: 10px; margin: 15px 0; padding: 12px; background: var(--soft); }
+.family-sampling-details dt { color: var(--muted); font-size: 11px; }
+.family-sampling-details dd { margin: 2px 0 0; }
+.family-method { border-top: 1px solid var(--line); padding-top: 12px; margin-bottom: 14px; }
+.family-method ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 15px; }
+.family-method li { display: flex; justify-content: space-between; }
+.family-evidence .family-attribution { font-size: 10px; margin-bottom: 0; overflow-wrap: anywhere; }
 @keyframes ticket-reveal { from { transform: translateY(8px); } to { transform: translateY(0); } }
 @keyframes ticket-wait { 50% { transform: translateY(-3px); } }
 @media (max-width: 800px) {

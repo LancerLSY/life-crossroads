@@ -47,6 +47,28 @@ function validWorldMessage(value) {
     && (value.target === undefined || text(value.target, 100)) && text(value.text, 1500) && year(value.year);
 }
 
+function validWorldThreads(value, currentYear, firstYear, peopleIds) {
+  if (value === undefined) return true;
+  if (!list(value, 9)) return false;
+  const ids = new Set();
+  const references = new Map(value.filter(object).map(item => [item.id, item.startedYear]));
+  let active = 0;
+  let resolved = 0;
+  return value.every(item => {
+    if (!object(item) || !text(item.id, 180) || ids.has(item.id) || !peopleIds.has(item.personId)
+      || !text(item.title, 140) || !text(item.cause, 1000) || !text(item.impact, 1000)
+      || ![1, 2, 3].includes(item.stage) || !['support', 'distance', 'conflict'].includes(item.direction)
+      || !integer(item.startedYear, firstYear, currentYear) || !integer(item.nextYear, item.startedYear, currentYear + 3)) return false;
+    ids.add(item.id);
+    if (item.status === 'active') active++;
+    else if (item.status === 'resolved') resolved++;
+    else return false;
+    return active <= 3 && resolved <= 6 && (item.relatedThreadId === undefined
+      || text(item.relatedThreadId, 180) && item.relatedThreadId !== item.id && references.has(item.relatedThreadId)
+        && references.get(item.relatedThreadId) <= item.startedYear);
+  });
+}
+
 export function isGameState(value) {
   if (!object(value) || value.version !== 1 || !identifier(value.id) || !object(value.config)
     || !text(value.config.name, 100) || !year(value.config.birthYear)
@@ -59,7 +81,9 @@ export function isGameState(value) {
     || !value.worldMessages.every(validWorldMessage) || typeof value.ended !== 'boolean'
     || !integer(value.turn, 0, 1000) || (value.ending !== undefined && !text(value.ending, 5000))) return false;
   const peopleIds = new Set(value.people.map((person) => person.id));
-  return peopleIds.size === value.people.length && value.history.every((event) => validEvent(event, peopleIds))
+  return validWorldThreads(value.worldThreads, value.year, value.config.birthYear + value.config.startAge, peopleIds)
+    && (value.worldUpdatedYear === undefined || integer(value.worldUpdatedYear, value.config.birthYear + value.config.startAge, value.year))
+    && peopleIds.size === value.people.length && value.history.every((event) => validEvent(event, peopleIds))
     && validEvent(value.currentEvent, peopleIds) && value.currentEvent.year === value.year && value.currentEvent.age === value.age;
 }
 
@@ -91,12 +115,14 @@ export function parseGeneratedTurn(value, state) {
   const names = new Map(people.flatMap((person) => [[person.id, person.name], [person.name, person.name]]));
   const speakers = new Set();
   const worldMessages = value.worldMessages.map((message, index) => {
-    if (!object(message) || !names.has(message.speaker) || !text(message.text, 600)
-      || (message.target !== undefined && (!names.has(message.target) || names.get(message.target) === names.get(message.speaker)))) invalid();
+    if (!object(message) || !names.has(message.speaker) || !text(message.text, 600)) invalid();
     const speaker = names.get(message.speaker);
+    const target = names.get(message.target)
+      ?? (message.target === state.config.name || message.target === state.id || message.target === 'protagonist' ? state.config.name : undefined);
+    if (message.target !== undefined && (!target || target === speaker)) invalid();
     speakers.add(speaker);
     return { id: `${state.currentEvent.id}-voice-${index}`, speaker,
-      ...(message.target === undefined ? {} : { target: names.get(message.target) }), text: message.text.trim(), year: state.year };
+      ...(target === undefined ? {} : { target }), text: message.text.trim(), year: state.year };
   });
   if (speakers.size > worldLimits(state.config.intelligence).speakers) invalid();
   return {

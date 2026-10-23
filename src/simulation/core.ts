@@ -1,5 +1,7 @@
+import { evolveWorld, recordWorldAction, worldThreadEvent } from '../game/world.ts'
 import { advanceYear, createLife, resolveChoice } from '../game/engine.ts'
 import type { Choice, Focus, GameState, LifeEvent, Person } from '../game/types.ts'
+import { sampleFamily } from './family.ts'
 import { COUNTRIES, countryAt, countryById, sampleCountry } from './countries.ts'
 import type { Country } from './countries.ts'
 import type { BirthRecord, EducationLevel, FocusWeights, FoundationConfig, InvestmentPolicy, Peer, Sex, Simulation, SimulationResult, Temperament, World, YearRecord } from './types.ts'
@@ -85,16 +87,16 @@ function birthRecord(config: FoundationConfig, country: Country): { birth: Birth
   const femaleChance = ['CHN', 'IND'].includes(country.id) ? .48 : .488
   const sex: Sex = random() < femaleChance ? '女' : '男'
   const name = config.name ?? makeName(country.id, sex, random)
-  const familyQuintile = 1 + Math.floor(random() * 5)
+  const family = sampleFamily(country.id, config.birthYear, rng(config.seed, 'birth-family'))
+  const { familyQuintile, motherAge } = family
   const parentJobs = familyQuintile < 3 ? ['农业劳动者', '店员', '工厂员工', '运输工作者', '服务业员工'] : ['教师', '技术工作者', '医护人员', '小店经营者', '办公室职员']
-  const motherAge = 20 + Math.floor(random() * 17)
   const birth: BirthRecord = {
     countryId: country.id, countryName: country.name, sex, familyQuintile,
-    familyClass: FAMILY_CLASSES[familyQuintile - 1]!, urban: random() < country.urban,
+    familyClass: FAMILY_CLASSES[familyQuintile - 1]!, urban: family.urban,
     parents: {
       mother: { name: makeName(country.id, '女', random), age: motherAge, occupation: parentJobs[Math.floor(random() * parentJobs.length)]! },
-      father: { name: makeName(country.id, '男', random), age: Math.max(18, motherAge + Math.floor(random() * 8) - 2), occupation: parentJobs[Math.floor(random() * parentJobs.length)]! },
-    }, siblings: Math.min(5, Math.max(0, Math.floor(random() * Math.max(1, country.fertility - .4)))),
+      father: { name: makeName(country.id, '男', random), age: family.fatherAge, occupation: parentJobs[Math.floor(random() * parentJobs.length)]! },
+    }, siblings: family.siblings, familySampling: family.metadata,
   }
   return { birth, name }
 }
@@ -124,7 +126,7 @@ function baseSimulation(config: FoundationConfig): SimulationResult {
   const familyRandom = rng(config.seed, 'birth-siblings')
   const siblings: Person[] = Array.from({ length: birth.siblings }, (_, index) => {
     const sex: Sex = familyRandom() < .488 ? '女' : '男'
-    return { id: `sibling-${index}`, name: makeName(country.id, sex, familyRandom), role: sex === '女' ? '姐姐' : '哥哥', age: 1 + Math.floor(familyRandom() * Math.min(12, birth.parents.mother.age - 17)), personality: '有自己的兴趣，慢慢学着和家人相处', closeness: 70, trust: 74, mood: '好奇', avatar: 6 + index, memories: [], messages: [] }
+    return { id: `sibling-${index}`, name: makeName(country.id, sex, familyRandom), role: sex === '女' ? '姐姐' : '哥哥', age: Math.max(1, Math.floor((index + 1) * (birth.parents.mother.age - 15) / Math.max(1, birth.siblings))), personality: '有自己的兴趣，慢慢学着和家人相处', closeness: 70, trust: 74, mood: '好奇', avatar: 6 + index, memories: [], messages: [] }
   })
   state = {
     ...state, stats: { health: Math.round(78 + random() * 17), happiness: Math.round(55 + random() * 20), knowledge: 0, wealth: birth.familyQuintile * 16 },
@@ -419,6 +421,7 @@ export function resolveSimulationDecision(original: GameState, previous: Simulat
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)!
   const simulation = copySimulation(previous)
   const applied = consequences(resolved, simulation, choice, original.age)
+  applied.state = evolveWorld(applied.state)
   if (applied.cost > 0) charge(simulation, applied.cost, true)
   if (applied.incomeFactor !== 1) simulation.pendingIncomeFactor = (simulation.pendingIncomeFactor ?? 1) * applied.incomeFactor
   simulation.relationships = relationshipScore(applied.state)
@@ -459,7 +462,7 @@ function step(original: GameState, previous: Simulation, choiceId?: string, weig
   const simulation = copySimulation(previous)
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)
   const weights = focusWeights(original, weightedFocus)
-  let state = localizeNewContacts(advanceYear(original, choiceId, { mortality: 'external' }), original, simulation)
+  let state = localizeNewContacts(advanceYear(original, choiceId, { mortality: 'external', world: 'external' }), original, simulation)
   if (state.people.length > 12) state = { ...state, people: state.people.filter(person => person.id !== 'neighbor') }
   const socialAdjustment = weights.social - (original.focus === 'social' ? 1 : 0)
   if (socialAdjustment) state = { ...state, people: state.people.map(person => present(person) && person.id !== choice?.personId ? { ...person, closeness: clamp(person.closeness + socialAdjustment), trust: clamp(person.trust + weights.social * .7 - (original.focus === 'social' ? 1 : 0)) } : person) }
@@ -492,7 +495,8 @@ function step(original: GameState, previous: Simulation, choiceId?: string, weig
     simulation.reflectedAges.push(state.age)
     simulation.reflectionAge = state.age
   }
-  state = { ...state, currentEvent: nextEvent(state, simulation) }
+  state = evolveWorld({ ...state, currentEvent: nextEvent(state, simulation) })
+  state = { ...state, currentEvent: worldThreadEvent(state) ?? state.currentEvent }
   // Mark birth-country peers' departures in the year at which the player reaches them.
   const departures = simulation.peers.filter(peer => peer.deathAge === state.age)
   if (departures.length && !state.ended) state = { ...state, currentEvent: { ...state.currentEvent, description: `${state.currentEvent.description}\n${departures.map(peer => `与你同年出生的${peer.name}，在${peer.deathAge}岁结束了这一生。`).join('\n')}`.slice(0, 3000) } }
@@ -536,11 +540,30 @@ function charge(simulation: Simulation, amount: number, allowDebt = false): void
   simulation.economy.totalExpenses = money(simulation.economy.totalExpenses + amount)
 }
 
+// Keep space for future engine contacts and up to three children. Never evict a
+// family member or an existing relationship just to introduce an action contact.
+function actionContact(state: GameState, simulation: Simulation, kind: 'travel' | 'social' | 'migrate'): { state: GameState; personId?: string } {
+  if (state.config.intelligence <= 0) return { state }
+  const id = `contact-${state.year}-${simulation.currentCountryId}`
+  const existing = state.people.find(person => person.id === id)
+  if (existing) return { state, ...(present(existing) ? { personId: existing.id } : {}) }
+  const reserved = Math.max(0, 3 - simulation.children)
+    + (state.people.some(person => person.id === 'neighbor') ? 0 : 1)
+    + (state.people.some(person => person.id === 'acquaintance') ? 0 : 1)
+  if (state.people.length + reserved >= 12) return { state }
+  const random = rng(simulation.config.seed, id)
+  const role = kind === 'migrate' ? '新邻里朋友' : kind === 'travel' ? '旅途中认识的朋友' : '活动中认识的朋友'
+  const person: Person = { id, name: makeName(simulation.currentCountryId, random() < .488 ? '女' : '男', random), role,
+    age: Math.min(99, state.age), personality: '有自己的生活与兴趣，愿意从具体的小事慢慢了解彼此', closeness: 42, trust: 52,
+    mood: '期待下一次交流', avatar: 4, memories: [`${state.year}年，在${countryById(simulation.currentCountryId).name}与你相识。`], messages: [] }
+  return { state: { ...state, people: [...state.people, person] }, personId: person.id }
+}
+
 export function spend(previous: Simulation, original: GameState, action: 'health' | 'travel' | 'social' | 'study' | 'home' | 'repay' | 'invest', amount?: number): SimulationResult {
   if (original.ended) throw new Error('这一生已结束，记录保留供回看。')
   if (original.age < 6) throw new Error('长大一些后，可以安排自己的支出。')
   const simulation: Simulation = { ...previous, economy: { ...previous.economy }, years: [...previous.years] }
-  const state = { ...original, stats: { ...original.stats } }
+  let state = { ...original, stats: { ...original.stats } }
   const country = conditions(simulation, state.year)
   const requested = amount === undefined ? country.gdp * (action === 'health' ? .025 : .015) : amount
   if (!Number.isFinite(requested) || requested <= 0 || requested > 1e12) throw new Error('请输入有效金额。')
@@ -577,6 +600,9 @@ export function spend(previous: Simulation, original: GameState, action: 'health
       simulation.relationships = relationshipScore(state)
     }
   }
+  const contact = action === 'travel' || action === 'social' ? actionContact(state, simulation, action) : { state }
+  state = recordWorldAction(contact.state, { kind: action, amount: money(previous.economy.cash - simulation.economy.cash), location: country.name, personId: contact.personId })
+  simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, simulation.years.at(-1)?.marker)
   return { state, simulation }
 }
@@ -591,7 +617,10 @@ export function migrate(original: GameState, previous: Simulation, countryId: st
   charge(simulation, expense)
   simulation.currentCountryId = countryId
   // Credentials, children, family and assets persist; next year's wages use the destination.
-  const state = { ...original, config: { ...original.config, location: country.name }, stats: { ...original.stats, happiness: clamp(original.stats.happiness - 3), knowledge: clamp(original.stats.knowledge + 3) }, currentEvent: { ...original.currentEvent, description: `${original.currentEvent.description}\n你迁居到了${country.name}，支付了${expense.toLocaleString()} PPP美元的搬迁费用。新的生活条件将从本年开始影响收入与风险。`.slice(0, 3000) } }
+  let state = { ...original, config: { ...original.config, location: country.name }, stats: { ...original.stats, happiness: clamp(original.stats.happiness - 3), knowledge: clamp(original.stats.knowledge + 3) }, currentEvent: { ...original.currentEvent, description: `${original.currentEvent.description}\n你迁居到了${country.name}，支付了${expense.toLocaleString()} PPP美元的搬迁费用。新的生活条件将从本年开始影响收入与风险。`.slice(0, 3000) } }
+  const contact = actionContact(state, simulation, 'migrate')
+  state = recordWorldAction(contact.state, { kind: 'migrate', amount: expense, location: country.name, personId: contact.personId })
+  simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, 'move')
   return { state, simulation }
 }
@@ -609,7 +638,13 @@ export function validateSimulation(value: unknown): value is Simulation {
     if (!['past', 'present', 'future'].includes(config.world as string) || !finite(config.birthYear, 1950, 2100, true) || !['birth', 'population'].includes(config.drawMode as string) || ![30, 60, 90].includes(config.paceMinutes as number) || typeof config.softMode !== 'boolean' || !finite(config.seed, 0, 4294967295, true) || !finite(config.intelligence, 0, 100) || config.name !== undefined && !text(config.name, 40) || config.countryId !== undefined && !countryId(config.countryId) || config.homeCountryId !== undefined && !countryId(config.homeCountryId)) return false
     const birth = value.birth
     if (!countryId(birth.countryId) || !text(birth.countryName, 100) || !['女', '男'].includes(birth.sex as string) || !text(birth.familyClass, 60) || !finite(birth.familyQuintile, 1, 5, true) || typeof birth.urban !== 'boolean' || !finite(birth.siblings, 0, 10, true) || !isRecord(birth.parents)) return false
-    if (!['mother', 'father'].every(key => { const parent = birth.parents && (birth.parents as Record<string, unknown>)[key]; return isRecord(parent) && text(parent.name, 60) && finite(parent.age, 18, 70, true) && text(parent.occupation, 80) })) return false
+    if (!['mother', 'father'].every(key => { const parent = birth.parents && (birth.parents as Record<string, unknown>)[key]; return isRecord(parent) && text(parent.name, 60) && finite(parent.age, 15, 70, true) && text(parent.occupation, 80) })) return false
+    if (birth.familySampling !== undefined) {
+      const metadata = birth.familySampling
+      if (!isRecord(metadata) || metadata.version !== 1 || metadata.evidence !== 'survey-proxy' || !text(metadata.surveyId, 80) || !finite(metadata.surveyYear, 1950, 2100, true) || !countryId(metadata.sourceCountry) || !text(metadata.sourceURL, 2000) || !metadata.sourceURL.startsWith('https://api.dhsprogram.com/') || typeof metadata.countryMatch !== 'boolean' || !finite(metadata.requestedYear, 1950, 2100, true) || !['1', '2', '3', '4', '5+'].includes(metadata.birthOrderGroup as string)) return false
+      const validProbabilities = (values: unknown): values is number[] => Array.isArray(values) && values.length > 0 && values.every(value => finite(value, 0, 1)) && Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) < 1e-8
+      if (!validProbabilities(metadata.wealthProbabilities) || metadata.wealthProbabilities.length !== 5 || !finite(metadata.urbanProbability, 0, 1) || !Array.isArray(metadata.maternalAgeDistribution) || metadata.maternalAgeDistribution.length > 20 || !metadata.maternalAgeDistribution.every(group => isRecord(group) && text(group.label, 50) && finite(group.probability, 0, 1)) || !validProbabilities(metadata.maternalAgeDistribution.map(group => group.probability)) || !Array.isArray(metadata.notes) || metadata.notes.length > 20 || !metadata.notes.every(note => text(note, 500))) return false
+    }
     const economy = value.economy
     if (economy.homeOwned === false && economy.homeValue !== 0) return false
     if (!['cash', 'annualIncome', 'annualExpenses', 'investments', 'debt', 'homeValue', 'totalIncome', 'totalExpenses'].every(key => finite(economy[key], 0, 1e12)) || !finite(economy.investmentReturn, -1e12, 1e12) || typeof economy.homeOwned !== 'boolean' || !POLICIES.includes(economy.policy as InvestmentPolicy)) return false

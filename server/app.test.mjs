@@ -62,6 +62,33 @@ function rawRequest(base, path, options = {}) {
   });
 }
 
+test('NPC world messages can address the protagonist by name, id, or canonical alias without taking over their identity', async (t) => {
+  const input = state();
+  input.config.name = '试玩角色';
+  const base = await appServer(t, { fetch: async () => modelResponse(generated({
+    worldMessages: [input.config.name, input.id, 'protagonist'].map(target => ({ speaker: 'friend-1', target,
+      text: '哎，最近有个挺有意思的事，想找你聊聊，你什么时候有空？', year: 1900 })),
+  })) });
+  const result = await post(base, '/api/turn', { state: input });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.worldMessages.map(({ speaker, target, year }) => ({ speaker, target, year })),
+    Array.from({ length: 3 }, () => ({ speaker: '许安', target: '试玩角色', year: input.year })));
+  assert.equal(result.body.event.id, input.currentEvent.id);
+  assert.equal(result.body.event.age, input.age);
+});
+
+test('world messages still reject protagonist speakers, unknown targets, and NPC self-talk', async (t) => {
+  const input = state();
+  for (const message of [
+    { speaker: input.config.name, target: 'friend-1' }, { speaker: input.id, target: 'friend-1' },
+    { speaker: 'protagonist', target: 'friend-1' }, { speaker: 'player', target: 'friend-1' },
+    { speaker: 'friend-1', target: '未知人物' }, { speaker: 'friend-1', target: '许安' },
+  ]) {
+    const base = await appServer(t, { fetch: async () => modelResponse(generated({ worldMessages: [{ ...message, text: '你好' }] })) });
+    assert.equal((await post(base, '/api/turn', { state: input })).status, 502);
+  }
+});
+
 test('status reports real key configuration and model without exposing credentials', async (t) => {
   const base = await appServer(t, { config: { apiKey: '', model: 'custom-deepseek', accessToken: 'private-token' } });
   const response = await fetch(`${base}/api/status`);
@@ -320,4 +347,35 @@ test('turn prompts retain departed memories outside active NPCs and reject their
     assert.equal(result.status, 502);
     assert.equal(result.body.error.code, 'INVALID_MODEL_OUTPUT');
   }
+});
+
+test('world save extension rejects malformed, future, and unknown references while preserving old saves', () => {
+  const old = state();
+  assert.ok(isGameState(old));
+  const thread = { id: 'thread-1', personId: 'friend-1', title: '一次邀请', cause: '共同兴趣', stage: 1, status: 'active', direction: 'support', impact: '一起参加活动', startedYear: old.year, nextYear: old.year + 1 };
+  assert.ok(isGameState({ ...old, worldThreads: [thread], worldUpdatedYear: old.year }));
+  for (const changed of [{ personId: 'unknown' }, { relatedThreadId: 'missing' }, { relatedThreadId: thread.id }, { startedYear: old.year + 1 }, { nextYear: old.year + 4 }, { impact: {} }, { stage: 9 }]) {
+    assert.equal(isGameState({ ...old, worldThreads: [{ ...thread, ...changed }] }), false);
+  }
+  assert.equal(isGameState({ ...old, worldUpdatedYear: old.year + 1 }), false);
+  assert.equal(isGameState({ ...old, worldThreads: [thread, thread] }), false);
+});
+
+test('turn prompt carries active world causes and pending choices without advancing the timeline', async (t) => {
+  let payload;
+  const base = await appServer(t, { fetch: async (_, options) => { payload = JSON.parse(options.body); return modelResponse(generated()); } });
+  const input = state();
+  input.worldUpdatedYear = input.year;
+  input.worldThreads = [{ id: 'thread-1', personId: 'friend-1', title: '一次邀请', cause: '上次谈起摄影', stage: 2, status: 'active', direction: 'support', impact: '准备一起参加展览', startedYear: input.year - 1, nextYear: input.year + 1 }];
+  input.currentEvent.choices[0].id = 'world:thread-1:engage';
+  const before = globalThis.structuredClone(input);
+  const result = await post(base, '/api/turn', { state: input });
+  assert.equal(result.status, 200);
+  const context = JSON.parse(payload.messages[1].content);
+  assert.equal(context.worldThreads[0].cause, input.worldThreads[0].cause);
+  assert.equal(context.worldThreads[0].stage, 2);
+  assert.equal(context.currentEvent.choices[0].id, 'world:thread-1:engage');
+  assert.equal(result.body.event.year, input.year);
+  assert.equal(result.body.event.age, input.age);
+  assert.deepEqual(input, before);
 });
