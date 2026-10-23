@@ -426,12 +426,40 @@ export function resolveSimulationDecision(original: GameState, previous: Simulat
   return { state: applied.state, simulation }
 }
 
+function localizeNewContacts(state: GameState, original: GameState, simulation: Simulation): GameState {
+  const existingIds = new Set(original.people.map(person => person.id))
+  const names = new Map<string, string>()
+  const people = state.people.map(person => {
+    if (existingIds.has(person.id)) return person
+    const random = rng(simulation.config.seed, `contact-${simulation.currentCountryId}-${state.age}-${person.id}`)
+    const name = makeName(simulation.currentCountryId, random() < .488 ? '女' : '男', random)
+    names.set(person.name, name)
+    return { ...person, name }
+  })
+  if (!names.size) return state
+  const replaceNames = (text: string) => [...names].reduce((value, [before, after]) => value.replaceAll(before, after), text)
+  // The engine already authored this year's event and dialogue with its default names.
+  // Keep saved history and earlier conversations intact, including legacy NPC names.
+  const previousMessages = new Set(original.worldMessages.map(message => message.id))
+  return {
+    ...state, people,
+    currentEvent: {
+      ...state.currentEvent, title: replaceNames(state.currentEvent.title), description: replaceNames(state.currentEvent.description),
+      choices: state.currentEvent.choices.map(choice => ({ ...choice, label: replaceNames(choice.label), hint: replaceNames(choice.hint) })),
+    },
+    worldMessages: state.worldMessages.map(message => previousMessages.has(message.id) ? message : {
+      ...message, speaker: names.get(message.speaker) ?? message.speaker,
+      ...(message.target ? { target: names.get(message.target) ?? message.target } : {}), text: replaceNames(message.text),
+    }),
+  }
+}
+
 function step(original: GameState, previous: Simulation, choiceId?: string, weightedFocus?: FocusWeights): SimulationResult {
   if (original.ended) return { state: original, simulation: previous }
   const simulation = copySimulation(previous)
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)
   const weights = focusWeights(original, weightedFocus)
-  let state = advanceYear(original, choiceId, { mortality: 'external' })
+  let state = localizeNewContacts(advanceYear(original, choiceId, { mortality: 'external' }), original, simulation)
   if (state.people.length > 12) state = { ...state, people: state.people.filter(person => person.id !== 'neighbor') }
   const socialAdjustment = weights.social - (original.focus === 'social' ? 1 : 0)
   if (socialAdjustment) state = { ...state, people: state.people.map(person => present(person) && person.id !== choice?.personId ? { ...person, closeness: clamp(person.closeness + socialAdjustment), trust: clamp(person.trust + weights.social * .7 - (original.focus === 'social' ? 1 : 0)) } : person) }

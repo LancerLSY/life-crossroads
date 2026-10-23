@@ -1,14 +1,36 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, GitBranch, MessageCircle, Heart, ShieldCheck, BookOpen, CornerDownRight } from 'lucide-react';
+import { ArrowRight, GitBranch, MessageCircle, Heart, ShieldCheck, BookOpen, CornerDownRight, Pencil } from 'lucide-react';
 import { Avatar } from './People';
 import PixelScene from './PixelScene';
 import type { GameState } from '../game/types.ts';
 import type { Branch, SaveFile, Snapshot } from '../lib/storage';
+import { MAX_BRANCHES } from '../lib/storage';
+function TimelineRow({ branch, active, number, disabled, onSwitch, onRename }: {
+  branch: Branch; active: boolean; number: number; disabled: boolean;
+  onSwitch: (id: string) => void; onRename: (id: string, name: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(branch.name);
+  const [error, setError] = useState('');
+  function rename(event: React.FormEvent) {
+    event.preventDefault();
+    if (disabled) return;
+    try { onRename(branch.id, name); setEditing(false); setError(''); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '名称暂时无法保存。'); }
+  }
+  return <article className={`timeline-entry ${active ? 'active' : ''}`}>
+    <div className="timeline-row">
+      <button className="branch-row" disabled={disabled || editing} onClick={() => onSwitch(branch.id)} aria-current={active ? 'true' : undefined}><span className="branch-icon"><GitBranch size={20}/></span><span><strong>{branch.name}</strong><small>{branch.state.config.name} · {branch.state.config.birthYear} — {branch.state.year}{branch.forkYear ? ` · 从 ${branch.forkYear} 年分岔` : ''}</small></span><span className="branch-tag">{active ? '正在经历' : `人生 ${String(number).padStart(2, '0')}`}</span></button>
+      <button className="icon-button rename-branch" disabled={disabled} aria-label={`重命名时间线：${branch.name}`} onClick={() => { setName(branch.name); setError(''); setEditing(!editing); }}><Pencil size={14}/></button>
+    </div>
+    {editing && <form className="rename-form" onSubmit={rename}><label className="form-label">时间线名称<input autoFocus maxLength={60} value={name} disabled={disabled} onChange={event => { setName(event.target.value); setError(''); }} onKeyDown={event => { if (event.key === 'Escape') setEditing(false); }}/></label><div className="save-actions"><button className="secondary-button" disabled={disabled || !name.trim()}>保存名称</button><button type="button" className="text-button" onClick={() => setEditing(false)}>取消</button></div>{error && <p className="inline-error" role="alert">{error}</p>}</form>}
+  </article>;
+}
 export function Relationships({ state, onChat }: { state: GameState; onChat: (id: string) => void }) {
   return <main className="feature-column"><span className="feature-kicker">不是一个人的人生</span><h1>有些相遇，<br/>会改变故事的走向。</h1><p className="feature-description">他们会记得你的选择，也会有自己的心事。<br/>好好说话，认真相处，让关系慢慢生长。</p><div className="relationship-list">{state.people.map(p => <article className="relationship-card" key={p.id}><header><Avatar person={p}/><div><h2>{p.name}<small>{p.role} · {p.age} 岁</small></h2><p>{p.personality}</p></div><button className="icon-button" onClick={() => onChat(p.id)} aria-label={state.ended || p.role.endsWith('已离世') ? `翻阅与${p.name}的回忆` : `与${p.name}对话`}><MessageCircle size={18}/></button></header><div className="relationship-numbers"><span><Heart size={14}/>亲密 {Math.round(p.closeness)}</span><span><ShieldCheck size={14}/>信任 {Math.round(p.trust)}</span><span>{p.mood}</span></div><div className="memory-block"><BookOpen size={15}/><p>{p.memories.at(-1) ?? '你们的共同回忆，正等着被写下。'}</p></div><button className="text-button" onClick={() => onChat(p.id)}>{state.ended || p.role.endsWith('已离世') ? '翻阅回忆' : '聊一会儿'}<ArrowRight size={14}/></button></article>)}</div></main>;
 }
-export function Timelines({ save, active, onSwitch, onFork, disabled }: { save: SaveFile; active: Branch; onSwitch: (id: string) => void; onFork: (s: Snapshot) => void; disabled: boolean }) {
-  return <main className="feature-column"><span className="feature-kicker">如果那一年，选择另一条路</span><h1>人生从不只有<br/>一种可能。</h1><p className="feature-description">从已经走过的年份分出新的人生。原来的故事会保留，<br/>你可以随时回来，看看另一种选择将你带向哪里。</p><section className="branch-section"><div className="section-heading"><h2>你的时间线</h2><span>{save.branches.length} / 8</span></div>{save.branches.map((b, i) => <button className={`branch-row ${b.id === active.id ? 'active' : ''}`} key={b.id} disabled={disabled} onClick={() => onSwitch(b.id)}><span className="branch-icon"><GitBranch size={20}/></span><span><strong>{b.name}</strong><small>{b.state.config.name} · {b.state.config.birthYear} — {b.state.year}{b.forkYear ? ` · 从 ${b.forkYear} 年分岔` : ''}</small></span><span className="branch-tag">{b.id === active.id ? '正在经历' : `人生 ${String(i + 1).padStart(2, '0')}`}</span></button>)}</section><section className="rewind-section"><div className="section-heading"><h2>回到故事的岔路口</h2><span>最近 24 个年份</span></div>{active.snapshots.length === 0 ? <div className="empty-state"><CornerDownRight size={30}/><h3>第一条岔路，就在眼前</h3><p>走过第一个完整年份后，就能回到这一年开启平行人生。</p></div> : <div className="rewind-list">{[...active.snapshots].reverse().map(point => <article key={`${point.state.year}-${point.state.turn}`}><div className="rewind-scene"><PixelScene state={point.state} simulation={point.simulation} showCaption={false}/></div><div className="rewind-year">{point.state.year}<small>{point.state.age} 岁</small></div><div className="rewind-copy"><h3>{point.state.currentEvent.title}</h3><p>{point.state.currentEvent.description.slice(0, 68)}…</p></div><button className="secondary-button" disabled={disabled || save.branches.length >= 8} onClick={() => onFork(point)}><GitBranch size={14}/>从这里分岔</button></article>)}</div>}</section></main>;
+export function Timelines({ save, active, onSwitch, onFork, onRename, disabled }: { save: SaveFile; active: Branch; onSwitch: (id: string) => void; onFork: (s: Snapshot) => void; onRename: (id: string, name: string) => void; disabled: boolean }) {
+  return <main className="feature-column"><span className="feature-kicker">如果那一年，选择另一条路</span><h1>人生从不只有<br/>一种可能。</h1><p className="feature-description">从已经走过的年份分出新的人生。原来的故事会保留，<br/>你可以随时回来，看看另一种选择将你带向哪里。</p><section className="branch-section"><div className="section-heading"><h2>你的时间线</h2><span>{save.branches.length} / {MAX_BRANCHES}</span></div>{save.branches.map((branch, index) => <TimelineRow key={branch.id} branch={branch} active={branch.id === active.id} number={index + 1} disabled={disabled} onSwitch={onSwitch} onRename={onRename}/>)}</section><section className="rewind-section"><div className="section-heading"><h2>回到故事的岔路口</h2><span>最近 24 个年份</span></div>{active.snapshots.length === 0 ? <div className="empty-state"><CornerDownRight size={30}/><h3>第一条岔路，就在眼前</h3><p>走过第一个完整年份后，就能回到这一年开启平行人生。</p></div> : <div className="rewind-list">{[...active.snapshots].reverse().map(point => <article key={`${point.state.year}-${point.state.turn}`}><div className="rewind-scene"><PixelScene state={point.state} simulation={point.simulation} showCaption={false}/></div><div className="rewind-year">{point.state.year}<small>{point.state.age} 岁</small></div><div className="rewind-copy"><h3>{point.state.currentEvent.title}</h3><p>{point.state.currentEvent.description.slice(0, 68)}…</p></div><button className="secondary-button" disabled={disabled || save.branches.length >= MAX_BRANCHES} onClick={() => onFork(point)}><GitBranch size={14}/>从这里分岔</button></article>)}</div>}</section></main>;
 }
 export function HistoryPanel({ state }: { state: GameState }) {
   return <div className="history-list">{state.history.length === 0 ? <div className="empty-state"><BookOpen size={32}/><h3>故事刚刚开始</h3><p>每一个走过的年份，都会留在这里。</p></div> : [...state.history].reverse().map(e => <article key={e.id}><div className="history-year">{e.year}<small>{e.age} 岁</small></div><div><h3>{e.title}</h3><p>{e.description}</p></div></article>)}</div>;

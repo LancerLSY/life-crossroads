@@ -29,7 +29,7 @@ export interface SaveFile { version: 2; activeBranchId: string; branches: Branch
 export const STORAGE_KEY = 'otherlife-save-v2'
 export const MAX_SAVE_BYTES = 4_000_000
 const TARGET_SAVE_BYTES = 3_500_000
-const MAX_BRANCHES = 8
+export const MAX_BRANCHES = 8
 const MAX_SNAPSHOTS = 24
 const FOCUSES = new Set(['balance', 'study', 'career', 'social', 'health'])
 const encoder = new TextEncoder()
@@ -127,6 +127,67 @@ export function loadSave(): SaveFile {
     }
   } catch { /* A new newborn save also works when browser storage is unavailable. */ }
   return initialSave()
+}
+
+export function parseSave(raw: string): SaveFile {
+  if (encoder.encode(raw).byteLength > MAX_SAVE_BYTES) throw new Error('存档文件超过 4 MB，请选择更小的备份。')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error('存档不是有效的 JSON 文件，请选择导出的人生备份。')
+  }
+  // Reject dangerous property names at any depth before accepting external data.
+  const pending: unknown[] = [parsed]
+  while (pending.length) {
+    const value = pending.pop()
+    if (value !== null && typeof value === 'object') {
+      for (const [key, child] of Object.entries(value)) {
+        if (['__proto__', 'prototype', 'constructor'].includes(key)) throw new Error('存档包含不安全的字段，无法导入。')
+        if (child !== null && typeof child === 'object') pending.push(child)
+      }
+    }
+  }
+  if (record(parsed) && parsed.version !== 2) throw new Error('存档版本不受支持，请使用第 2 版人生备份。')
+  if (!validSave(parsed)) throw new Error('存档数据不完整或已损坏，请检查人生、时间线与时钟记录。')
+  return parsed
+}
+
+function checkCompleteSave(save: SaveFile): void {
+  if (!validSave(save)) throw new Error('存档数据不完整，无法保存此更改。')
+  // Unlike export, edits and merging must never prune existing rewind points.
+  if (encoder.encode(JSON.stringify(save)).byteLength > MAX_SAVE_BYTES) throw new Error('合并或更名后的存档超过 4 MB，无法保存完整记录。')
+}
+
+export function renameBranch(save: SaveFile, id: string, name: string): SaveFile {
+  const trimmed = name.trim()
+  if (!trimmed || trimmed.length > 60) throw new Error('时间线名称需为 1 至 60 个字符，不能只包含空白。')
+  if (!save.branches.some(branch => branch.id === id)) throw new Error('找不到要更名的时间线。')
+  const result = { ...save, branches: save.branches.map(branch => branch.id === id ? { ...branch, name: trimmed } : branch) }
+  checkCompleteSave(result)
+  return result
+}
+
+export function mergeSave(current: SaveFile, incoming: SaveFile): SaveFile {
+  if (!validSave(current) || !validSave(incoming)) throw new Error('当前存档或导入备份不完整，无法合并。')
+  if (current.branches.length + incoming.branches.length > MAX_BRANCHES) throw new Error('合并后超过 8 条时间线，无法导入整个备份。请减少时间线后再试。')
+  const used = new Set([...current.branches, ...incoming.branches].map(branch => branch.id))
+  const ids = new Map<string, string>()
+  for (const branch of incoming.branches) {
+    let id = uid()
+    while (used.has(id)) id = uid()
+    used.add(id)
+    ids.set(branch.id, id)
+  }
+  const imported = structuredClone(incoming.branches).map(branch => {
+    branch.id = ids.get(branch.id)!
+    if (branch.parentId !== undefined) branch.parentId = ids.get(branch.parentId)!
+    branch.clock = { ...branch.clock, paused: true, fastForward: false }
+    return branch
+  })
+  const result = { ...current, branches: [...current.branches, ...imported] }
+  checkCompleteSave(result)
+  return result
 }
 
 export function updateBranch(save: SaveFile, state: GameState, simulation: Simulation, snapshot = false): SaveFile {

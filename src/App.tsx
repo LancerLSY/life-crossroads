@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { GitBranch, Settings, ArrowRight, Check, Download, Upload, Wifi, WifiOff, RefreshCw, X, BookOpen, Users, Play, Pause, FastForward, Wallet, Star, Moon, Sun, Volume2, VolumeX } from 'lucide-react';
+import { GitBranch, Settings, ArrowRight, Check, Download, Wifi, WifiOff, RefreshCw, X, BookOpen, Users, Play, Pause, FastForward, Wallet, Star, Moon, Sun, Volume2, VolumeX } from 'lucide-react';
 import Biography from './components/Biography';
 import People from './components/People';
 import Story from './components/Story';
 import Modal from './components/Modal';
+import SavePanel from './components/SavePanel';
+import type { ImportMode } from './components/SavePanel';
 import { ChatPanel, HistoryPanel, Relationships, Timelines } from './components/Panels';
 import { BirthWelcome, BirthCertificate, SimulationDashboard, LifeEconomy, Reflection, LifeEnding } from './components/FoundationViews';
 import type { SpendAction } from './components/FoundationViews';
@@ -11,14 +13,14 @@ import { applyGeneratedEvent, interact, setFocus, setIntelligence } from './game
 import type { Focus, GameState } from './game/types.ts';
 import { advanceSimulation, createSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend } from './simulation/core.ts';
 import type { FoundationConfig, InvestmentPolicy, Simulation } from './simulation/types.ts';
-import { downloadSave, forkBranch, loadSave, MAX_SAVE_BYTES, serializeSave, STORAGE_KEY, uid, updateBranch, validSave } from './lib/storage';
-import type { ClockState, Snapshot } from './lib/storage';
+import { downloadSave, forkBranch, loadSave, MAX_BRANCHES, mergeSave, renameBranch, serializeSave, STORAGE_KEY, uid, updateBranch } from './lib/storage';
+import type { ClockState, SaveFile, Snapshot } from './lib/storage';
 import { interruptClock, saveClock, tickClock } from './lib/clock';
 import { deriveSceneModel, renderScene } from './pixel/scene.ts';
 import { api, DEFAULT_STATUS, generateReply, generateTurn } from './lib/api';
 import type { ApiStatus } from './lib/api';
 type Tab = 'story' | 'people' | 'timelines';
-type Dialog = 'setup' | 'settings' | 'history' | 'economy' | null;
+type Dialog = 'setup' | 'settings' | 'history' | 'economy' | 'save' | null;
 const SPEEDS = [1, 2, 4, 8, 12, 16] as const;
 const newClock = (): ClockState => ({ fraction: 0, speed: 1, paused: false, autoDecision: false, fastForward: false, focusWeights: {} });
 export default function App() {
@@ -44,7 +46,6 @@ export default function App() {
   const [music, setMusic] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const audioBusy = useRef(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   const blocked = active.stage !== 'playing' || state.ended || busy || !!dialog || !!chatId || simulation.reflectionAge !== undefined || state.currentEvent.choices.length > 0;
   const canUseModel = status.configured && state.config.intelligence > 0;
   const latestSave = useRef(save);
@@ -166,7 +167,7 @@ export default function App() {
   function changeIntelligence(value: number) { if (!lock.current && !state.ended) apply(setIntelligence(state, value), { ...simulation, config: { ...simulation.config, intelligence: value } }); }
   function newLife(config: Partial<FoundationConfig>) {
     if (lock.current) return;
-    if (save.branches.length >= 8) { setToast('已保存 8 条时间线，请先导出存档保留故事。'); return; }
+    if (save.branches.length >= MAX_BRANCHES) { setToast('已保存 8 条时间线，请先导出存档保留故事。'); return; }
     const outgoingClock = clockRef.current;
     const result = createSimulation(config); const id = uid(); const nextClock = { ...newClock(), paused: true };
     setSave(s => ({ ...s, activeBranchId: id, branches: [...saveClock(s, outgoingClock).branches.filter(b => b.stage !== 'setup'), { id, name: `${result.state.config.name}的一生`, createdAt: new Date().toISOString(), ...result, snapshots: [], stage: 'certificate', clock: nextClock }] }));
@@ -183,18 +184,28 @@ export default function App() {
     clockRef.current = nextClock; setClock(nextClock); setSelected(null); setChatId(null); setDecisionHidden(false);
   }
   function fork(snapshot: Snapshot) { if (lock.current) return; try { const forked = forkBranch(saveClock(save, clockRef.current), snapshot); setSave(forked); const c = forked.branches.at(-1)!.clock; clockRef.current = c; setClock(c); setSelected(null); setTab('story'); setDecisionHidden(false); setToast(`已回到 ${snapshot.state.year} 年，原来的故事仍然保留。`); } catch (error) { setToast((error as Error).message); } }
-  async function importSave(file?: File) {
-    if (!file || lock.current) return;
-    lock.current = true; setBusy(true);
-    try {
-      if (file.size > MAX_SAVE_BYTES) throw new Error('请选择 4 MB 以内的游戏存档。');
-      const parsed: unknown = JSON.parse(await file.text());
-      if (!validSave(parsed)) throw new Error('无法识别这个存档，请选择「人生岔路」导出的 JSON 文件。');
-      const c = { ...parsed.branches.find(b => b.id === parsed.activeBranchId)!.clock, paused: true, fastForward: false };
-      setSave(saveClock(parsed, c)); clockRef.current = c; setClock(c);
-      setSelected(null); setDecisionHidden(false); setChatId(null); setDialog(null); setTab('story'); setToast('存档已载入，欢迎回到你的故事。');
-    } catch (error) { setToast(error instanceof Error ? error.message : '存档载入失败。'); }
-    finally { lock.current = false; setBusy(false); if (fileInput.current) fileInput.current.value = ''; }
+  function loadBackup(incoming: SaveFile, mode: ImportMode) {
+    if (lock.current) throw new Error('故事还在更新，请稍后再试。');
+    const current = saveClock(save, clockRef.current);
+    let loaded = mode === 'merge' ? mergeSave(current, incoming) : {
+      ...incoming, branches: incoming.branches.map(branch => ({ ...branch, clock: { ...branch.clock, paused: true, fastForward: false } })),
+    };
+    // A new browser's setup placeholder has no timeline navigation yet.
+    if (mode === 'merge' && active.stage === 'setup') {
+      const importedIndex = incoming.branches.findIndex(branch => branch.id === incoming.activeBranchId);
+      loaded = { ...loaded, activeBranchId: loaded.branches[current.branches.length + importedIndex].id };
+    }
+    serializeSave(loaded);
+    const c = { ...loaded.branches.find(branch => branch.id === loaded.activeBranchId)!.clock, paused: true, fastForward: false };
+    setSave(saveClock(loaded, c)); clockRef.current = c; setClock(c);
+    setSelected(null); setDecisionHidden(false); setChatId(null); setDialog(null);
+    setTab(mode === 'merge' ? 'timelines' : 'story');
+    setToast(mode === 'merge' ? `已加入 ${incoming.branches.length} 条时间线，原来的人生仍然保留。` : '备份已恢复，时间暂停在你离开的地方。');
+  }
+  function renameTimeline(id: string, name: string) {
+    if (lock.current) throw new Error('故事还在更新，请稍后再试。');
+    setSave(renameBranch(saveClock(save, clockRef.current), id, name));
+    setToast('时间线名称已保存。');
   }
   function saveNote(text: string) { if (lock.current || simulation.reflectionAge === undefined || state.ended) return; const next = { ...simulation, notes: [...simulation.notes, { age: state.age, text: text.trim().slice(0, 200) }] }; delete next.reflectionAge; apply(state, next); }
   function economicAction(action: SpendAction, amount?: number) { if (lock.current || state.ended) return; try { const result = spend(simulation, state, action, amount); apply(result.state, result.simulation); setToast('这笔安排已记入家庭账本。'); } catch (error) { setToast((error as Error).message); } }
@@ -252,6 +263,8 @@ export default function App() {
     return () => window.removeEventListener('keydown', selectWithKeyboard);
   }, [active.stage, chatId, decisionHidden, dialog, simulation.reflectionAge, state, tab]);
   const openChat = (id: string) => { if (state.people.some(person => person.id === id)) setChatId(id); };
+  const modalNotice = { notice: toast, onDismissNotice: () => setToast('') };
+  const hasModal = !!dialog || !!chatId || (simulation.reflectionAge !== undefined && !busy);
   const visibleRecords = [state.currentEvent, ...[...state.history].reverse()].slice(0, 8);
   const header = <header className="app-header">
     <a className="brand" href="#" onClick={e => { e.preventDefault(); setTab('story'); }} aria-label="人生岔路首页"><span className="pixel-brand-mark" aria-hidden="true">✦</span><strong>人生岔路</strong></a>
@@ -284,18 +297,18 @@ export default function App() {
                   {visibleRecords.map(e => <button key={e.id} disabled={busy} className={`record-row ${simulation.starred.includes(e.id) ? 'starred' : ''}`} onClick={() => apply(state, { ...simulation, starred: simulation.starred.includes(e.id) ? simulation.starred.filter(id => id !== e.id) : [...simulation.starred, e.id] })}><span className="record-age">{e.age}岁<small>{e.year}</small></span><span className="record-content"><strong>{e.title}</strong><span className="record-description">{e.description}</span></span><Star size={13} fill={simulation.starred.includes(e.id) ? 'currentColor' : 'none'}/></button>)}
                   <button className="text-button" onClick={() => setDialog('history')}>查看更早的纪录<ArrowRight size={12}/></button>
                 </section>
-              </> : tab === 'people' ? <Relationships state={state} onChat={openChat}/> : <Timelines save={save} active={active} onSwitch={switchBranch} onFork={fork} disabled={busy}/>}
+              </> : tab === 'people' ? <Relationships state={state} onChat={openChat}/> : <Timelines save={save} active={active} onSwitch={switchBranch} onFork={fork} onRename={renameTimeline} disabled={busy}/>}
           </div>
           <div className="right-rail"><People state={state} onChat={openChat} onRelations={() => setTab('people')} onIntelligence={changeIntelligence} disabled={busy || state.ended} configured={status.configured}/><SimulationDashboard state={state} simulation={simulation}/></div>
         </div>
       </>}
-    {toast && <div className="toast" role="status"><span>{toast}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setToast('')}><X size={15}/></button></div>}
-    {dialog === 'setup' && <Modal title="新的一生" subtitle="从零岁开始，世界替你抽出最初的那张牌。" wide onClose={() => setDialog(null)}><BirthWelcome onCreate={newLife} onSettings={() => setDialog('settings')} hasSaved onResume={() => setDialog(null)}/></Modal>}
-    {dialog === 'economy' && <Modal title="家人与生活" subtitle="让每一笔选择，留在真实的账本里。" wide onClose={() => setDialog(null)}><fieldset disabled={busy || state.ended} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><LifeEconomy state={state} simulation={simulation} onAction={economicAction} onPolicy={policy} onMigrate={move}/></fieldset></Modal>}
-    {dialog === 'history' && <Modal title="人生手记" subtitle={`${state.config.name} · ${state.config.birthYear} — ${state.year}`} wide onClose={() => setDialog(null)}><HistoryPanel state={state}/>{simulation.notes.filter(n => n.text).map(n => <p className="reflection-saved" key={n.age}>{n.age} 岁的我：{n.text}</p>)}</Modal>}
-    {simulation.reflectionAge !== undefined && !dialog && !chatId && !busy && <Modal title="暂停片刻" subtitle="把这段人生，和自己的生活放在一起想一想。" onClose={() => saveNote('')}><Reflection age={simulation.reflectionAge} onSave={saveNote}/></Modal>}
-    {chatId && <Modal title={state.age < 6 ? '家人在你身边说的话' : '把话说给重要的人听'} subtitle={`${state.year} 年 · 对话会留在共同记忆里`} onClose={() => setChatId(null)}><ChatPanel key={chatId} state={state} personId={chatId} busy={busy} configured={status.configured} onSend={sendMessage}/></Modal>}
-    {dialog === 'settings' && <Modal title="世界的设定" subtitle="让故事按照你喜欢的节奏生长。" onClose={() => setDialog(null)}><div className="settings-content"><div className={`connection-box ${status.configured ? 'connected' : ''}`}>{status.configured ? <Wifi size={22}/> : <WifiOff size={22}/>}<div><strong>{status.configured ? 'DeepSeek 已连接' : '正在本地世界中'}</strong><p>{status.configured ? `当前模型 · ${status.model}` : '完整人生可直接游玩，连接模型后开启自由叙事。'}</p></div><button className="icon-button" disabled={statusBusy} onClick={() => void refreshStatus()} aria-label="刷新连接状态"><RefreshCw size={16} className={statusBusy ? 'spin' : ''}/></button></div>{!status.configured && <div className="api-help"><p>服务端配置 <code>DEEPSEEK_API_KEY</code> 并重启后，点击刷新。</p><p>密钥只保留在服务端。</p></div>}{status.requiresAccessToken && <label className="form-label">站点访问口令<input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="部署者设置的访问口令"/><small>仅在本次页面会话中使用。</small></label>}<section className="setting-section"><div className="section-heading"><h3>世界智能</h3><strong>{state.config.intelligence} / 100</strong></div><input aria-label="设置世界智能" type="range" min="0" max="100" step="10" value={state.config.intelligence} disabled={busy || state.ended} onChange={e => changeIntelligence(Number(e.target.value))}/><div className="range-captions"><span>0 · 本地叙事</span><span>50 · 丰富世界</span><span>100 · 自由涌现</span></div><p>控制事件发散程度、人物发言和故事交织。快转时优先在关键抉择处生成；80 以上也生成途中故事。</p></section><section className="setting-section setting-toggles"><button className="secondary-button" onClick={() => setDark(!dark)}>{dark ? <Sun size={15}/> : <Moon size={15}/>} {dark ? '浅色画面' : '深色画面'}</button><button className="secondary-button" onClick={() => void toggleMusic()}>{music ? <VolumeX size={15}/> : <Volume2 size={15}/>} {music ? '关闭环境音' : '轻柔环境音'}</button><label><input type="checkbox" checked={simulation.config.softMode} disabled={busy || state.ended} onChange={e => apply(state, { ...simulation, config: { ...simulation.config, softMode: e.target.checked } })}/>温和叙事</label></section><section className="setting-section"><div className="section-heading"><h3>珍藏你的故事</h3><span>{saved ? <><Check size={12}/>已自动保存</> : '自动保存不可用'}</span></div><p>人生、时钟和分支保存在浏览器；载入会替换本地存档，请先导出。</p><div className="save-actions"><button className="secondary-button" onClick={exportSave}><Download size={15}/>导出存档</button><button className="secondary-button" disabled={busy} onClick={() => fileInput.current?.click()}><Upload size={15}/>载入存档</button></div></section><p className="settings-note">原创模拟模型；统计数据来自 WDI 与官方补充资料。代理值、历史插值和未来情景详见项目数据说明。人物和事件为虚构。</p></div></Modal>}
-    <input className="visually-hidden" aria-label="选择游戏存档" ref={fileInput} type="file" accept=".json,application/json" disabled={busy} onChange={e => void importSave(e.target.files?.[0])}/>
+    {toast && !hasModal && <div className="toast" role="status"><span>{toast}</span><button className="icon-button" aria-label="关闭提示" onClick={() => setToast('')}><X size={15}/></button></div>}
+    {dialog === 'setup' && <Modal {...modalNotice} title="新的一生" subtitle="从零岁开始，世界替你抽出最初的那张牌。" wide onClose={() => setDialog(null)}><BirthWelcome onCreate={newLife} onSettings={() => setDialog('settings')} hasSaved onResume={() => setDialog(null)}/></Modal>}
+    {dialog === 'economy' && <Modal {...modalNotice} title="家人与生活" subtitle="让每一笔选择，留在真实的账本里。" wide onClose={() => setDialog(null)}><fieldset disabled={busy || state.ended} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}><LifeEconomy state={state} simulation={simulation} onAction={economicAction} onPolicy={policy} onMigrate={move}/></fieldset></Modal>}
+    {dialog === 'history' && <Modal {...modalNotice} title="人生手记" subtitle={`${state.config.name} · ${state.config.birthYear} — ${state.year}`} wide onClose={() => setDialog(null)}><HistoryPanel state={state}/>{simulation.notes.filter(n => n.text).map(n => <p className="reflection-saved" key={n.age}>{n.age} 岁的我：{n.text}</p>)}</Modal>}
+    {simulation.reflectionAge !== undefined && !dialog && !chatId && !busy && <Modal {...modalNotice} title="暂停片刻" subtitle="把这段人生，和自己的生活放在一起想一想。" onClose={() => saveNote('')}><Reflection age={simulation.reflectionAge} onSave={saveNote}/></Modal>}
+    {chatId && <Modal {...modalNotice} title={state.age < 6 ? '家人在你身边说的话' : '把话说给重要的人听'} subtitle={`${state.year} 年 · 对话会留在共同记忆里`} onClose={() => setChatId(null)}><ChatPanel key={chatId} state={state} personId={chatId} busy={busy} configured={status.configured} onSend={sendMessage}/></Modal>}
+    {dialog === 'settings' && <Modal {...modalNotice} title="世界的设定" subtitle="让故事按照你喜欢的节奏生长。" onClose={() => setDialog(null)}><div className="settings-content"><div className={`connection-box ${status.configured ? 'connected' : ''}`}>{status.configured ? <Wifi size={22}/> : <WifiOff size={22}/>}<div><strong>{status.configured ? 'DeepSeek 已连接' : '正在本地世界中'}</strong><p>{status.configured ? `当前模型 · ${status.model}` : '完整人生可直接游玩，连接模型后开启自由叙事。'}</p></div><button className="icon-button" disabled={statusBusy} onClick={() => void refreshStatus()} aria-label="刷新连接状态"><RefreshCw size={16} className={statusBusy ? 'spin' : ''}/></button></div>{!status.configured && <div className="api-help"><p>服务端配置 <code>DEEPSEEK_API_KEY</code> 并重启后，点击刷新。</p><p>密钥只保留在服务端。</p></div>}{status.requiresAccessToken && <label className="form-label">站点访问口令<input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="部署者设置的访问口令"/><small>仅在本次页面会话中使用。</small></label>}<section className="setting-section"><div className="section-heading"><h3>世界智能</h3><strong>{state.config.intelligence} / 100</strong></div><input aria-label="设置世界智能" type="range" min="0" max="100" step="10" value={state.config.intelligence} disabled={busy || state.ended} onChange={e => changeIntelligence(Number(e.target.value))}/><div className="range-captions"><span>0 · 本地叙事</span><span>50 · 丰富世界</span><span>100 · 自由涌现</span></div><p>控制事件发散程度、人物发言和故事交织。快转时优先在关键抉择处生成；80 以上也生成途中故事。</p></section><section className="setting-section setting-toggles"><button className="secondary-button" onClick={() => setDark(!dark)}>{dark ? <Sun size={15}/> : <Moon size={15}/>} {dark ? '浅色画面' : '深色画面'}</button><button className="secondary-button" onClick={() => void toggleMusic()}>{music ? <VolumeX size={15}/> : <Volume2 size={15}/>} {music ? '关闭环境音' : '轻柔环境音'}</button><label><input type="checkbox" checked={simulation.config.softMode} disabled={busy || state.ended} onChange={e => apply(state, { ...simulation, config: { ...simulation.config, softMode: e.target.checked } })}/>温和叙事</label></section><section className="setting-section"><div className="section-heading"><h3>珍藏你的故事</h3><span>{saved ? <><Check size={12}/>已自动保存</> : '自动保存不可用'}</span></div><p>备份全部人生，或预览另一份存档后加入时间线。</p><div className="save-actions"><button className="secondary-button" onClick={exportSave}><Download size={15}/>导出存档</button><button className="secondary-button" disabled={busy} onClick={() => { setToast(''); setDialog('save'); }}><GitBranch size={15}/>备份与载入</button></div></section><p className="settings-note">原创模拟模型；统计数据来自 WDI 与官方补充资料。代理值、历史插值和未来情景详见项目数据说明。人物和事件为虚构。</p></div></Modal>}
+    {dialog === 'save' && <Modal {...modalNotice} title="珍藏你的故事" subtitle="每一条时间线，都可以好好保留。" onClose={() => setDialog(null)}><SavePanel count={save.branches.length} saved={saved} getSave={() => saveClock(save, clockRef.current)} onLoad={loadBackup}/></Modal>}
   </div>;
 }

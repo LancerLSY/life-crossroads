@@ -404,3 +404,41 @@ test('early social temperament connects to family and old saves gain valid defau
   assert.equal(activeFocus.simulation.economy.annualIncome, 0)
   assert.equal(activeFocus.simulation.workYears, 0)
 })
+
+test('new childhood and adult contacts receive deterministic local names without changing family or portraits', () => {
+  const birth = createSimulation({ seed: 918, countryId: 'IND', birthYear: 2000 })
+  const family = new Map(birth.state.people.map(person => [person.id, person.name]))
+  let result = birth
+  const indianName = /^(Asha|Priya|Anika|Meera|Arjun|Ravi|Aarav|Dev) (Sharma|Patel|Das|Kumar)$/
+  for (const [age, id, avatar] of [[3, 'friend', 2], [6, 'mentor', 3], [18, 'acquaintance', 5], [26, 'neighbor', 4]] as const) {
+    result = until(result, age)
+    assert.equal(result.state.age, age)
+    const contact = result.state.people.find(person => person.id === id)!
+    assert.match(contact.name, indianName)
+    assert.equal(contact.avatar, avatar)
+    for (const person of result.state.people) if (family.has(person.id)) assert.equal(person.name, family.get(person.id))
+    for (const message of result.state.worldMessages.filter(message => message.year === result.state.year)) {
+      assert.ok(result.state.people.some(person => person.name === message.speaker))
+      assert.ok(result.state.people.some(person => person.name === message.target))
+    }
+    assert.doesNotMatch(result.state.currentEvent.description, /江小满|周予安|夏予宁|唐时雨/)
+  }
+  assert.deepEqual(until(createSimulation({ seed: 918, countryId: 'IND', birthYear: 2000 }), 26), result)
+})
+
+test('migration localizes only future contacts and preserves legacy names and conversations', () => {
+  const result = until(createSimulation({ seed: 918, countryId: 'IND', birthYear: 2000 }), 25)
+  result.state.people = result.state.people.map(person => person.id === 'friend' ? { ...person, name: '旧存档朋友' } : person)
+  result.simulation.economy.cash = 1_000_000
+  const migrated = migrate(result.state, result.simulation, 'JPN')
+  const saved = JSON.parse(JSON.stringify(migrated)) as SimulationResult
+  const next = until(saved, 26)
+  assert.match(next.state.people.find(person => person.id === 'neighbor')!.name, /^(佐藤|铃木|高桥|田中)(葵|凛|美咲|悠真|莲|阳太)$/)
+  for (const person of migrated.state.people) assert.equal(next.state.people.find(item => item.id === person.id)?.name, person.name)
+  assert.deepEqual(next.state.history.slice(0, migrated.state.history.length), migrated.state.history)
+  for (const message of migrated.state.worldMessages) {
+    const retained = next.state.worldMessages.find(item => item.id === message.id)
+    if (retained) assert.deepEqual(retained, message)
+  }
+  assert.deepEqual(next, until(JSON.parse(JSON.stringify(migrated)) as SimulationResult, 26))
+})

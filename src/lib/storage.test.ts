@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { advanceSimulation, createSimulation, resolveSimulationDecision } from '../simulation/core.ts'
 import type { SimulationResult } from '../simulation/types.ts'
-import { forkBranch, initialSave, loadSave, MAX_SAVE_BYTES, serializeSave, STORAGE_KEY, updateBranch, validSave } from './storage.ts'
+import { forkBranch, initialSave, loadSave, MAX_BRANCHES, MAX_SAVE_BYTES, mergeSave, parseSave, renameBranch, serializeSave, STORAGE_KEY, updateBranch, validSave } from './storage.ts'
 import type { ClockState, SaveFile, Snapshot } from './storage.ts'
 
 const clock = (): ClockState => ({ fraction: 0, speed: 1, paused: true, autoDecision: false, fastForward: false, focusWeights: {} })
@@ -29,6 +29,84 @@ function padded(snapshot: Snapshot): Snapshot {
   }))
   return result
 }
+
+test('parseSave validates UTF-8 size, JSON, version, unsafe fields and data consistency', () => {
+  const save = fixture()
+  assert.deepEqual(parseSave(JSON.stringify(save)), save)
+  assert.throws(() => parseSave('{'), /JSON/)
+  assert.throws(() => parseSave(JSON.stringify({ ...save, version: 1 })), /版本/)
+  assert.throws(() => parseSave(JSON.stringify({ ...save, activeBranchId: 'missing' })), /损坏/)
+  const raw = JSON.stringify({ ...save, filler: '人'.repeat(1_400_000) })
+  assert.ok(raw.length < MAX_SAVE_BYTES)
+  assert.throws(() => parseSave(raw), /4 MB/)
+  for (const key of ['__proto__', 'constructor', 'prototype']) {
+    const polluted = JSON.stringify({ ...save, extra: { [key]: { polluted: true } } })
+    assert.throws(() => parseSave(polluted), /不安全/)
+  }
+  assert.equal(Object.prototype.hasOwnProperty.call(Object.prototype, 'polluted'), false)
+})
+
+test('renameBranch trims names, enforces boundaries and preserves all unrelated branch data', () => {
+  const save = forkBranch(fixture(), fixture().branches[0])
+  const before = clone(save)
+  const renamed = renameBranch(save, 'root', '  新的人生  ')
+  assert.equal(renamed.branches[0].name, '新的人生')
+  assert.equal(renamed.branches[0].state, save.branches[0].state)
+  assert.equal(renamed.branches[1], save.branches[1])
+  assert.equal(renamed.activeBranchId, save.activeBranchId)
+  assert.deepEqual(save, before)
+  assert.equal(renameBranch(save, 'root', '人'.repeat(60)).branches[0].name.length, 60)
+  for (const name of ['', ' \n\t ', '人'.repeat(61)]) assert.throws(() => renameBranch(save, 'root', name), /1 至 60/)
+  assert.throws(() => renameBranch(save, 'missing', '名字'), /找不到/)
+})
+
+test('merging same IDs imports independent copies, remaps ancestry and pauses every imported clock', () => {
+  const current = fixture(1)
+  const source = fixture(2)
+  let incoming = forkBranch(source, source.branches[0])
+  incoming = forkBranch(incoming, incoming.branches[1])
+  for (const branch of incoming.branches) {
+    branch.clock.paused = false
+    branch.clock.fastForward = true
+  }
+  const currentBefore = clone(current)
+  const incomingBefore = clone(incoming)
+  const result = mergeSave(current, incoming)
+  assert.ok(validSave(result))
+  assert.equal(result.activeBranchId, current.activeBranchId)
+  assert.equal(result.branches[0], current.branches[0])
+  const imported = result.branches.slice(1)
+  const oldIds = new Set([...current.branches, ...incoming.branches].map(branch => branch.id))
+  assert.ok(imported.every(branch => !oldIds.has(branch.id)))
+  assert.equal(new Set(result.branches.map(branch => branch.id)).size, 4)
+  assert.equal(imported[1].parentId, imported[0].id)
+  assert.equal(imported[2].parentId, imported[1].id)
+  assert.notDeepEqual(imported[0].state, current.branches[0].state)
+  for (const [index, branch] of imported.entries()) {
+    assert.deepEqual(branch.state, incoming.branches[index].state)
+    assert.deepEqual(branch.simulation, incoming.branches[index].simulation)
+    assert.equal(branch.clock.paused, true)
+    assert.equal(branch.clock.fastForward, false)
+  }
+  imported[0].simulation.economy.cash += 1
+  imported[0].state.people[0].memories.push('新副本')
+  assert.deepEqual(current, currentBefore)
+  assert.deepEqual(incoming, incomingBefore)
+})
+
+test('merge refuses excess capacity or bytes without dropping branches or rewind points', () => {
+  let current = fixture()
+  for (let i = 1; i < MAX_BRANCHES; i++) current = forkBranch(current, current.branches[0])
+  const before = clone(current)
+  assert.throws(() => mergeSave(current, fixture(2)), /8 条/)
+  assert.deepEqual(current, before)
+  const source = progress(fixture(), 2)
+  const large = { ...source, branches: [{ ...source.branches[0], snapshots: source.branches[0].snapshots.map(padded) }] }
+  assert.ok(validSave(large))
+  assert.throws(() => mergeSave(fixture(2), large), /4 MB/)
+  assert.equal(large.branches[0].snapshots.length, 2)
+  assert.throws(() => mergeSave(fixture(), { ...fixture(), activeBranchId: 'missing' }), /不完整/)
+})
 
 test('initial v2 save creates a paused current-world newborn with four peers and setup stage', () => {
   const save = initialSave()
