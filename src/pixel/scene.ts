@@ -99,8 +99,9 @@ export function deriveSceneModel(state?: GameState, simulation?: Simulation, dar
   const ended = state?.ended ?? false
   const happiness = state?.stats.happiness ?? 76
   const occupation = simulation?.occupation ?? ''
-  const prop: SceneProp = ended ? 'memorial' : age < 6 ? 'toys' : age < 18 || occupation === '学生' ? 'school'
-    : simulation?.retired || age >= 60 ? 'bench' : /等待|照顾|无业/.test(occupation) ? 'garden' : 'work'
+  const student = simulation ? occupation === '学生' : age >= 6 && age < 18
+  const prop: SceneProp = ended ? 'memorial' : age < 6 ? 'toys' : simulation?.retired ? 'bench'
+    : student ? 'school' : age < 16 ? 'toys' : !occupation || /等待|照顾|无业/.test(occupation) ? 'garden' : 'work'
   const self: ScenePerson = { id: 'self', name: state?.config.name ?? '小禾', age, role: '你', sex: simulation?.birth.sex, self: true }
   const family: ScenePerson[] = state ? state.people.filter(isHousehold).map(person => ({
     id: person.id, name: person.name, age: person.age, role: person.role, sex: sexFromRole(person.role), self: false,
@@ -468,7 +469,32 @@ export function renderPortrait(options: PortraitOptions): PixelFrame {
   r.rect(23, 0, 1, 32, rgb(dark ? '#394d48' : '#9caa8f'))
   r.rect(0, 31, 24, 1, rgb(dark ? '#394d48' : '#9caa8f'))
   r.rect(2, 23, 20, 7, rgb(dark ? '#63725e' : '#bec9a1'))
-  const offset = age < 2 ? 5 : age < 12 ? 2 : 0
+  if (age < 2) {
+    const wrap = rgb(dark ? '#67918f' : '#94bfbd')
+    const light = rgb(dark ? '#a9c7bd' : '#deeee5')
+    // A newborn is wrapped in a blanket; an adult bust shifted down still looks adult.
+    r.rect(9, 5, 6, 1, C.ink)
+    r.rect(7, 6, 10, 2, C.ink)
+    r.rect(6, 8, 12, 16, C.ink)
+    r.rect(5, 11, 14, 9, C.ink)
+    r.rect(7, 24, 10, 3, C.ink)
+    r.rect(9, 27, 6, 1, C.ink)
+    r.rect(8, 7, 8, 18, wrap)
+    r.rect(7, 9, 10, 14, wrap)
+    r.rect(6, 12, 12, 7, wrap)
+    r.rect(8, 24, 8, 2, wrap)
+    r.rect(8, 8, 8, 9, C.ink)
+    r.rect(9, 9, 6, 7, look.skin)
+    r.rect(10, 8, 4, 2, look.hair)
+    r.dot(10, 12, C.ink)
+    r.dot(13, 12, C.ink)
+    r.rect(11, 14, 2, 1, C.terracotta)
+    r.rect(7, 17, 10, 1, light)
+    for (let step = 0; step < 7; step++) r.rect(7 + step, 18 + step, 2, 1, light)
+    r.rect(9, 25, 6, 1, light)
+    return r.frame
+  }
+  const offset = age < 12 ? 2 : 0
   const headY = 5 + offset
   r.rect(8, headY - 1, 8, 1, C.ink)
   r.rect(6, headY, 12, 10, C.ink)

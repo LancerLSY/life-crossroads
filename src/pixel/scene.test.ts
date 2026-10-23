@@ -44,7 +44,7 @@ test('young children cannot receive adult work props and growing changes their s
   const baby = renderScene(deriveSceneModel(state, simulation))
   assert.equal(deriveSceneModel(state, simulation).prop, 'toys')
   state.age = 10
-  assert.equal(deriveSceneModel(state, simulation).prop, 'school')
+  assert.equal(deriveSceneModel(state, simulation).prop, 'toys')
   const child = renderScene(deriveSceneModel(state, simulation))
   state.age = 30
   assert.equal(deriveSceneModel(state, simulation).prop, 'work')
@@ -126,4 +126,41 @@ test('portrait and scene share identity colors, preserve identity through age an
   assert.notDeepEqual(portrait.pixels, renderPortrait({ name, age: 25, role: '母亲', sex: '女', dark: true }).pixels)
   const skinIndex = (9 * 24 + 11) * 4
   assert.deepEqual(Array.from(portrait.pixels.slice(skinIndex, skinIndex + 3)), young.skin)
+})
+
+test('newborn portraits use a wrapped infant silhouette instead of cropped adult shoulders', () => {
+  const options = { name: '像素验收', role: 'me', sex: '男' as const }
+  const baby = renderPortrait({ ...options, age: 0 })
+  const adult = renderPortrait({ ...options, age: 20 })
+  const shirt = personAppearance(options.name, 20, options.role, options.sex).shirt
+  const lowerShirtPixels = (frame: ReturnType<typeof renderPortrait>) => {
+    let count = 0
+    for (let y = 24; y < 30; y++) for (let x = 4; x < 21; x++) {
+      const index = (y * frame.width + x) * 4
+      if (shirt.every((value, channel) => frame.pixels[index + channel] === value)) count++
+    }
+    return count
+  }
+  assert.ok(lowerShirtPixels(adult) > 0)
+  assert.equal(lowerShirtPixels(baby), 0, 'newborn should be wrapped rather than wearing an adult shirt')
+  assert.equal(baby.width, 24)
+  assert.equal(baby.height, 32)
+})
+
+test('school and retirement props follow actual education and work state', () => {
+  const { state, simulation } = copy()
+  state.age = 8
+  simulation.occupation = '由家人照顾'
+  simulation.retired = false
+  const atHome = deriveSceneModel(state, simulation)
+  assert.notEqual(atHome.prop, 'school', 'age alone does not mean the child enrolled')
+  simulation.occupation = '学生'
+  const enrolled = deriveSceneModel(state, simulation)
+  assert.equal(enrolled.prop, 'school')
+  assert.notDeepEqual(renderScene(atHome).pixels, renderScene(enrolled).pixels)
+  state.age = 65
+  simulation.occupation = '专业技术人员'
+  assert.equal(deriveSceneModel(state, simulation).prop, 'work', 'an older person may still choose to work')
+  simulation.retired = true
+  assert.equal(deriveSceneModel(state, simulation).prop, 'bench')
 })
