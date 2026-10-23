@@ -13,7 +13,7 @@
     "preview": "npm run build && npm start",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "test": "node --test src/game/*.test.ts src/lib/*.test.ts src/simulation/*.test.ts server/*.test.mjs",
+    "test": "node --test src/game/*.test.ts src/lib/*.test.ts src/simulation/*.test.ts src/pixel/*.test.ts server/*.test.mjs",
     "check": "npm run lint && npm run build && npm test"
   },
   "dependencies": {

@@ -1,9 +1,10 @@
-# 美术与设计来源
+# 像素美术来源
 
-`design-concept.png` 是内置 ImageGen 生成的原创桌面界面设计参考，`../public/assets/riverside.png` 是再次独立生成的制作资产。图片已复制到本项目，不依赖生成器缓存。界面文字、控件、状态与图表均由代码渲染。
+当前版本没有手绘背景资源。所有人物、住宅、天空、街道、树木、道具和纪念场景均由 `src/pixel/scene.ts` 的独立整数像素绘制代码产生。
 
-设计方向：纸页底色 #f5f6f0，草木绿 #536b50，细线分栏，中文衬线标题，圆形选项字母，人物字头像。手机改为单列，保留状态、时间控制和选择流程。
+- `PixelScene.tsx`：原生192×60生活场景，最近邻显示。人物、房屋、地区、年龄、心情、职业、家庭和结局都来自游戏状态。
+- `PixelPortrait.tsx`：原生24×32人物肖像，与场景共享姓名外观种子。
+- `public/favicon.svg`：本项目原创的小型像素人物图标。
+- 分享卡：将本作像素画布嵌入本地SVG，姓名与文字经过转义。
 
-场景提示词要点：Hangzhou summer riverside lane; old bicycle at a white house; willow canopy; distant hills and village; warm afternoon; handpainted gouache/watercolor; muted sage/olive, cream and blue; wide2.5:1; no text, no logos, no UI. 它是统一的文学场景，不表示所有国家的真实当地影像。
-
-生成方式：内置 image_gen 工具。没有复制参考站的美术、商标或文字段落。
+原站的发布文件仅用于临时分析和本地参考，不随仓库分发。旧手绘资源已从当前版本移除，可在早期Git历史中查看。

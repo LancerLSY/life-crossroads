@@ -1,16 +1,53 @@
-import { Heart, Smile, BookOpen, MapPin, ArrowUpRight, Sprout, Briefcase, Users, Compass } from 'lucide-react';
-import { FOCUS_OPTIONS, getChapter } from '../game/engine.ts';
-import type { Focus, GameState, StatKey } from '../game/types.ts';
-const STATS = [{ id: 'health', label: '健康', Icon: Heart }, { id: 'happiness', label: '幸福', Icon: Smile }, { id: 'knowledge', label: '学识', Icon: BookOpen }, { id: 'wealth', label: '人际关系', Icon: Users }] as const;
-const FOCUS_ICONS = { balance: Compass, study: BookOpen, career: Briefcase, social: Users, health: Sprout };
-export default function Biography({ state, onFocus, onTimeline, disabled, relationships }: { state: GameState; onFocus: (f: Focus) => void; onTimeline: () => void; disabled: boolean; relationships?: number }) {
+import { ArrowUpRight, Wallet } from 'lucide-react';
+import type { GameState } from '../game/types.ts';
+import type { Simulation } from '../simulation/types.ts';
+import { countryAt } from '../simulation/countries.ts';
+import PixelPortrait from './PixelPortrait';
+import { deriveSceneModel } from '../pixel/scene.ts';
+const number = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 });
+export default function Biography({ state, simulation, onEconomy, onTimeline, disabled }: {
+  state: GameState; simulation: Simulation; onEconomy: () => void; onTimeline: () => void; disabled: boolean;
+}) {
+  const country = countryAt(simulation.currentCountryId, state.year, simulation.config.world);
+  const economy = simulation.economy;
+  const urban = deriveSceneModel(state, simulation).urban;
+  const netWorth = economy.cash + economy.investments + economy.homeValue - economy.debt;
+  const stats = [
+    { id: 'health', label: '健康', value: state.stats.health },
+    { id: 'happiness', label: '幸福', value: state.stats.happiness },
+    { id: 'knowledge', label: '知识', value: state.stats.knowledge },
+    { id: 'relationships', label: '人际关系', value: simulation.relationships },
+  ];
   return <aside className="biography">
-    <div className="identity"><div className="hero-avatar">{state.config.name.slice(0, 1)}</div><div><h2>{state.config.name}</h2><p><MapPin size={11}/>{state.config.location} · {state.config.birthYear} 年出生</p></div></div>
-    <div className="age-row"><span><strong>{state.age}</strong> 岁</span><span>{state.year}<small> 年</small></span></div>
-    <p className="chapter-copy">{getChapter(state.age)}，故事正慢慢展开。</p>
-    <div className="stats" aria-label="人生状态">{STATS.map(({ id, label, Icon }) => <div className={`stat ${id}`} key={id}><div><span><Icon size={13}/>{label}</span><strong>{Math.round(id === 'wealth' ? relationships ?? state.stats.wealth : state.stats[id as StatKey])}</strong></div><div className="progress-track" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={id === 'wealth' ? relationships ?? state.stats.wealth : state.stats[id]}><i style={{ width: `${id === 'wealth' ? relationships ?? state.stats.wealth : state.stats[id]}%` }}/></div></div>)}</div>
-    <section className="focus-section"><div className="section-heading"><h3>今年的重心</h3><span>随心而行</span></div><div className="focus-options">{state.age < 6 ? <p className="child-focus-note">6 岁起，可选择年度重心。</p> : FOCUS_OPTIONS.map(f => { const Icon = FOCUS_ICONS[f.id]; return <button key={f.id} title={f.description} disabled={disabled || state.ended} className={state.focus === f.id ? 'selected' : ''} aria-pressed={state.focus === f.id} onClick={() => onFocus(f.id)}><Icon size={13}/>{state.age < 13 ? ({balance:'兴趣休息',study:'用心学习',career:'帮忙家事',social:'朋友玩耍',health:'多多运动'}[f.id]) : state.age < 18 && f.id === 'career' ? '课余实践' : f.label}</button>; })}</div></section>
-    <section className="life-progress"><div className="section-heading"><h3>来时的路</h3><button className="text-icon" onClick={onTimeline} aria-label="查看完整时间线"><ArrowUpRight size={16}/></button></div><div className="life-points"><div className="life-point current"><span>{state.age} 岁 <small>{state.year}</small></span><p>{state.ended ? '此生，珍重' : state.currentEvent.title}</p></div>{state.history.slice(-2).reverse().map(e => <div className="life-point" key={e.id}><span>{e.age} 岁 <small>{e.year}</small></span><p>{e.title}</p></div>)}{state.config.startAge > 0 && state.age > state.config.startAge && <div className="life-point"><span>{state.config.startAge} 岁 <small>{state.config.birthYear + state.config.startAge}</small></span><p>故事的起点</p></div>}{!state.history.some(e => e.age === 0) && <div className="life-point origin"><span>0 岁 <small>{state.config.birthYear}</small></span><p>在{state.config.location}，与世界初次见面</p></div>}</div></section>
-    <div className="biography-note"><Sprout size={19}/><p>人生没有标准答案。<br/>慢慢来，去成为你。</p></div>
+    <section className="identity-card">
+      <div className="identity-card-top"><span>身份纪录 · {simulation.birth.countryId}</span><span>{state.config.birthYear}</span></div>
+      <div className="identity">
+        <PixelPortrait name={state.config.name} age={state.age} role="me" sex={simulation.birth.sex} size={64}/>
+        <div className="identity-text"><h2>{state.config.name}</h2><dl className="identity-facts">
+          <dt>性别</dt><dd>{simulation.birth.sex === '女' ? '女性' : '男性'}</dd>
+          <dt>出生</dt><dd>{simulation.birth.countryName} · {state.config.birthYear} 年</dd>
+          <dt>居住地</dt><dd>{country.name} · {urban ? '城市' : '乡村'}</dd>
+          <dt>出身家庭</dt><dd title={simulation.birth.familyClass} className="family-quintile">{'●'.repeat(simulation.birth.familyQuintile)}<span>{'○'.repeat(5 - simulation.birth.familyQuintile)}</span></dd>
+          <dt>学历</dt><dd>{simulation.education}</dd>
+          <dt>生活</dt><dd>{simulation.occupation}</dd>
+        </dl></div>
+      </div>
+      <div className="identity-code" aria-hidden="true">I&lt;{simulation.birth.countryId}{state.config.name.replace(/\s/g, '<').slice(0, 18)}&lt;&lt;&lt;&lt;&lt;<br/>{state.config.birthYear}{simulation.birth.sex === '女' ? 'F' : 'M'}{simulation.birth.countryId}&lt;{String(state.age).padStart(3, '0')}&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;</div>
+    </section>
+    <section className="status-panel panel"><div className="section-heading"><h3>状态</h3><span>0—100</span></div>
+      <div className="stats" aria-label="人生状态">{stats.map(s => <div className={`stat ${s.id}`} key={s.id}>
+        <span className="stat-label">{s.label}</span><div className="progress-track" role="meter" aria-label={s.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={s.value}><i style={{ width: `${s.value}%` }}/></div><strong>{Math.round(s.value)}</strong>
+      </div>)}</div>
+      <details className="stat-help"><summary>这些状态代表什么？</summary><p>健康影响风险与日常活动；幸福记录生活感受；知识影响学习与职业机会；人际关系来自亲密与信任。状态提高机会，选择仍会遇到意外。</p></details>
+      <div className="finance-summary"><div><span>净资产 · PPP 美元</span><strong>{state.age < 16 ? '—' : number.format(netWorth)}</strong><small>{state.age < 16 ? '还在家人的照顾下' : economy.homeOwned ? '拥有自住房' : '现金、投资与债务合计'}</small></div><div><span>年收入 · PPP 美元</span><strong>{state.age < 16 ? '—' : number.format(economy.annualIncome)}</strong><small>{state.age < 16 ? `家境：第 ${simulation.birth.familyQuintile} 分位` : simulation.occupation}</small></div></div>
+      <button className="secondary-button full-width" disabled={disabled} onClick={onEconomy}><Wallet size={14}/>花钱 · 投资</button>
+    </section>
+    <section className="panel timeline-shortcut"><div><h3>人生的另一种可能</h3><p>{state.config.birthYear} — {state.year} · {state.age} 岁</p></div><button className="icon-button" onClick={onTimeline} aria-label="查看完整时间线"><ArrowUpRight size={18}/></button></section>
+    <details className="country-profile panel"><summary>{country.name} · 生活环境</summary><dl>
+      <dt>人口</dt><dd>{number.format(country.population)}</dd><dt>每年出生人数</dt><dd>{number.format(country.births)}</dd>
+      <dt>平均寿命 · 女 / 男</dt><dd>{country.femaleLifeExpectancy.toFixed(1)} / {country.maleLifeExpectancy.toFixed(1)} 岁</dd>
+      <dt>婴儿死亡率</dt><dd>{country.infantMortality.toFixed(1)}‰</dd><dt>人均 GDP · PPP</dt><dd>${number.format(country.gdp)}</dd>
+      <dt>城市人口</dt><dd>{Math.round(country.urban * 100)}%</dd><dt>总生育率</dt><dd>{country.fertility.toFixed(2)}</dd>
+    </dl><p>资料来自 WDI 与官方补充数据；缺失年份及未来条件使用游戏情景。</p></details>
   </aside>;
 }

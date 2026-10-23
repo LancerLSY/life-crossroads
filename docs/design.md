@@ -1,7 +1,12 @@
-# Visual system
+# 像素视觉规范
 
-Built-in ImageGen concept: design-concept.png. Original literary game, pale paper #f5f6f0; charcoal #293329; muted #858a80; green #536b50; borders #dfe3d9; orange #d68c57. No image overlay. Chinese serif headings (Noto Serif SC/Songti SC fallback) with restrained sans UI, large32..40px year headline,14px story text1.9 line-height,11px helper text. Three open columns divided by vertical rules; left biography/stats/focus/timeline, center story scene/choices/history, right people/world dialogue/intelligence. Header brand/navigation/settings/new life. Signature motifs: thin branch mark, serif year, circle choice letters, quiet relationship progress, cinematic painted river scene. Controls use8px radius, thin strokes, focus outlines, no heavy shadows outside dialogs.
+本版以用户指定的原站运行界面为参考，依据 REA 与浏览器观察重新实现。
 
-Required feature surfaces share these tokens: relationships pane with character memories, chat drawer/dialog, time branch list with historical snapshot forks, setup form with era/custom year and start age, settings with actual DeepSeek status and session access token, import/export saved game. Mobile one column with horizontal status strip and tab navigation. Motion160..240ms fade, prefers-reduced-motion honored.
+- 场景原生分辨率192×60，比例32:10，画布使用最近邻放大；不对高清图片做像素滤镜。
+- 肖像原生24×32，与场景人物共享稳定的姓名外观种子。年龄变化改变体型、发色和道具。
+- 冷灰绿页面、近白卡片、酒红身份栏、青绿色强调、灰蓝街景。面板小圆角和细边框，正文14—15px。
+- 桌面三栏：左侧身份和状态；中间住宅场景、年度重心、抉择和纪录；右侧家人、NPC声音、同龄人、人生地图与存活曲线。
+- 小屏改为单栏；工具栏可换行，常用时间控制始终可达，关系和时间分支位于“更多”。
+- 出生、人物对话、历史分支缩略图和人生卡使用同一个像素渲染系统。明暗主题保持明确对比度。
 
-Concept text maps to actual generated game state. Intentional functional deviations: changing years and narrative text reflect runtime state; no fake date or saved timestamp; seed biography stores only events truly played. NPC monograms match Person.name. No adult thematic interaction for children. Complete local mode and explicit DeepSeek connection status.
+场景和UI是本项目独立实现，未复制参考站的程序、精灵矩阵或美术文件。功能和艺术方向的观察依据见 `rea-reconstruction.md`。

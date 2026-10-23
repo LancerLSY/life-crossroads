@@ -1,10 +1,21 @@
-import { MessageCircle, ArrowUpRight, Leaf } from 'lucide-react';
+import { MessageCircle, ChevronRight, Sparkles } from 'lucide-react';
 import type { GameState, Person } from '../game/types.ts';
-export function Avatar({ person, small = false }: { person: Person; small?: boolean }) { return <span className={`person-avatar color-${person.avatar % 6} ${small ? 'small' : ''}`}>{person.name.slice(0, 1)}</span>; }
-export default function People({ state, onChat, onRelations, onIntelligence, disabled, configured }: { state: GameState; onChat: (id: string) => void; onRelations: () => void; onIntelligence: (n: number) => void; disabled: boolean; configured: boolean }) {
-  return <aside className="people-rail"><section><div className="section-heading people-heading"><h2>此生相逢</h2><button className="text-button" onClick={onRelations}>{state.people.length} 位重要的人 <ArrowUpRight size={12}/></button></div><div className="person-list">{state.people.slice(0, 5).map(p => <button className="person-row" key={p.id} onClick={() => onChat(p.id)} aria-label={`与${p.name}对话`}><Avatar person={p}/><span className="person-info"><span className="person-name">{p.name}<small>{p.role}</small></span><span className="person-mood">{p.mood}</span><span className="relationship-meter"><span className="progress-track"><i style={{ width: `${p.closeness}%` }}/></span><small>{Math.round(p.closeness)}</small></span></span><MessageCircle size={16} className="person-message-icon"/></button>)}</div></section>
-    <section className="world-section"><div className="section-heading"><h2>世界的回声</h2><span className="live-label"><i/>此刻</span></div><p className="section-description">你不在场时，他们也有自己的故事。</p><div className="world-feed" aria-live="polite">{state.worldMessages.slice(-4).reverse().map(m => { const person = state.people.find(p => p.name === m.speaker || p.id === m.speaker); return <article className="world-message" key={m.id}>{person ? <Avatar person={person} small/> : <span className="world-leaf"><Leaf size={16}/></span>}<div><header><strong>{person?.name ?? m.speaker}</strong><span>{m.year} 年{m.target ? ` · 对${state.people.find(p => p.id === m.target)?.name ?? m.target}说` : ''}</span></header><p>{m.text}</p></div></article>; })}{state.worldMessages.length === 0 && <p className="empty-copy">风吹过街角，新的故事即将发生。</p>}</div></section>
-    <section className="intelligence-control"><div><Leaf size={18}/><label htmlFor="world-intelligence">世界智能</label><strong>{state.config.intelligence}<span> / 100</span></strong></div><input id="world-intelligence" type="range" min="0" max="100" step="10" value={state.config.intelligence} onChange={e => onIntelligence(Number(e.target.value))} disabled={disabled}/><p>{state.config.intelligence === 0 ? '安静世界 · 仅使用本地故事' : state.config.intelligence < 40 ? '轻声细语 · 偶尔泛起涟漪' : state.config.intelligence < 80 ? '丰富世界 · 每个人都有自己的声音' : '涌现世界 · 更多意外，更多交织'}{!configured && state.config.intelligence > 0 ? '（本地模式）' : ''}</p></section>
-    <p className="rail-footer">时间会走，故事由你写。</p>
+import PixelPortrait from './PixelPortrait';
+export function Avatar({ person, small = false }: { person: Person; small?: boolean }) {
+  return <PixelPortrait name={person.name} age={person.age} role={person.role} size={small ? 24 : 32}/>;
+}
+export default function People({ state, onChat, onRelations, onIntelligence, disabled, configured }: {
+  state: GameState; onChat: (id: string) => void; onRelations: () => void; onIntelligence: (n: number) => void; disabled: boolean; configured: boolean;
+}) {
+  const household = state.people.filter(p => /母亲|父亲|姐姐|哥哥|伴侣|孩子|女儿|儿子/.test(p.role));
+  const people = household.length ? household : state.people;
+  return <aside className="people-rail"><section className="family-panel panel"><div className="section-heading"><h3>家人与生活</h3><button className="text-button" onClick={onRelations}>全部关系<ChevronRight size={12}/></button></div>
+      <div className="person-list">{people.slice(0, 8).map(p => <button className={`person-row ${p.role.endsWith('已离世') ? 'departed' : ''}`} key={p.id} onClick={() => onChat(p.id)} aria-label={`与${p.name}对话`}><Avatar person={p}/><span className="person-info"><span className="person-name"><small>{p.role}</small><strong>{p.name} · {p.age} 岁</strong></span><span className="person-mood">{p.mood} · 亲密 {Math.round(p.closeness)}</span></span><MessageCircle size={14} className="person-message-icon"/></button>)}</div>
+    </section>
+    <details className="world-section panel" open><summary>身边的声音<span>NPC 互动</span></summary><div className="world-feed" aria-live="polite">{state.worldMessages.slice(-3).reverse().map(m => {
+      const person = state.people.find(p => p.name === m.speaker || p.id === m.speaker);
+      return <article className="world-message" key={m.id}>{person && <Avatar person={person} small/>}<div><header><strong>{person?.name ?? m.speaker}</strong><span>{m.year} 年{m.target ? ` · 对${state.people.find(p => p.id === m.target)?.name ?? m.target}说` : ''}</span></header><p>{m.text}</p></div></article>;
+    })}{state.worldMessages.length === 0 && <p className="empty-copy">他们的故事，也会随着时间继续。</p>}</div></details>
+    <section className="intelligence-control panel"><div><Sparkles size={14}/><label htmlFor="world-intelligence">世界智能</label><strong>{state.config.intelligence}<span> / 100</span></strong></div><input id="world-intelligence" type="range" min="0" max="100" step="10" value={state.config.intelligence} onChange={e => onIntelligence(Number(e.target.value))} disabled={disabled}/><p>{state.config.intelligence === 0 ? '本地故事，安静地往前走。' : state.config.intelligence < 40 ? '少一些波澜，多一些日常。' : state.config.intelligence < 80 ? '人物会主动说话，故事也会交织。' : '更多人物互动，更多意外的可能。'}{!configured && state.config.intelligence > 0 ? ' 当前为本地模式。' : ''}</p></section>
   </aside>;
 }

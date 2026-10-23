@@ -4,6 +4,7 @@ React + Vite + TypeScript browser client; native Node HTTP server. No hosted dat
 
 - `src/game/` is the pure seeded narrative/relationship engine: choice resolution, age progression, NPC identities, memories, local speech and model enrichment validation.
 - `src/simulation/` wraps the engine with independently sourced country conditions, weighted birth, demographics, education, occupation, annual accounts, investment, migration, probabilistic mortality, peer lifetimes and yearly records.
+- `src/pixel/` 从真实游戏与模拟状态推导场景，再生成原生像素RGBA；React画布只负责显示，绘制不推进时间或修改存档。
 - `src/lib/clock.ts` manages fractional-year elapsed time and interruption; `storage.ts` preserves full state+simulation pairs and rewind points before a decision.
 - `src/App.tsx` composes the visible flow, asynchronous generation, authenticated API calls and transactional save updates. Late responses can only commit against their original exact snapshot.
 - `server/` exposes `/api/status`, `/api/turn`, `/api/chat`, and secure static serving. DeepSeek secrets are read from server environment only. Generated JSON is validated and effects bounded before return.

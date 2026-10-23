@@ -1,14 +1,27 @@
-import { ArrowRight, Check, GitBranch, LoaderCircle, Feather, History, Sparkles } from 'lucide-react';
-import type { GameState } from '../game/types.ts';
-export default function Story({ state, selected, onSelect, onAdvance, onHistory, onNew, busy, saved, configured }: { state: GameState; selected: string | null; onSelect: (id: string) => void; onAdvance: () => void; onHistory: () => void; onNew: () => void; busy: boolean; saved: boolean; configured: boolean }) {
-  const e = state.currentEvent;
-  return <main className="story-column"><div className="story-topline"><span>{state.year} · {state.age < 18 ? '成长篇' : state.age < 35 ? '启程篇' : state.age < 60 ? '丰盛篇' : '回望篇'}</span><span className="save-label">{saved ? <Check size={13}/> : <Feather size={13}/>} {saved ? '已自动保存' : '当前浏览器未能保存'}</span></div>
-    <h1>{state.ended ? '这一生，成为了你。' : `${state.year}，${state.age < 6 ? '世界慢慢变大。' : state.age === 18 ? '夏天的岔路口。' : '人生未完待续。'}`}</h1>
-    <div className="scene"><img src="/assets/riverside.png" alt="午后的河畔，一辆自行车停在树影下，远山与村落映入水中" fetchPriority="high"/><div className="scene-caption"><span>{state.config.location}</span><i/>一段只属于你的时光</div></div>
-    <section className="story-event" key={e.id}><div className="event-heading"><GitBranch size={26}/><h2>{state.ended ? '写在故事的最后' : e.title}</h2><span className="event-source">{e.source === 'deepseek' ? <><Sparkles size={11}/> AI 叙事</> : e.choices.length ? '人生抉择' : '人生纪录'}</span></div><p className="narrative">{state.ended ? state.ending : e.description}</p>
-      {state.ended ? <div className="ending-actions"><button className="primary-button" onClick={onHistory}><History size={16}/>回看这一生</button><button className="secondary-button" onClick={onNew}>再经历一种人生<ArrowRight size={16}/></button></div> : <div className="choices" aria-label="选择你的人生方向">{e.choices.map((c, i) => <button key={c.id} disabled={busy} aria-pressed={selected === c.id} className={`choice ${selected === c.id ? 'selected' : ''}`} onClick={() => onSelect(c.id)}><span className="choice-letter">{selected === c.id ? <Check size={16}/> : String.fromCharCode(65 + i)}</span><span className="choice-copy"><strong>{c.label}</strong><small>{c.hint}</small></span><ArrowRight size={19}/></button>)}</div>}
+import { Check, ArrowRight, LoaderCircle, Sparkles } from 'lucide-react';
+import type { Focus, GameState } from '../game/types.ts';
+import type { Simulation } from '../simulation/types.ts';
+import { FOCUS_OPTIONS } from '../game/engine.ts';
+import PixelScene from './PixelScene';
+export default function Story({ state, simulation, selected, onSelect, onAdvance, onFocus, onChat, busy, saved, configured, hidden, onToggle }: {
+  state: GameState; simulation: Simulation; selected: string | null; onSelect: (id: string) => void; onAdvance: () => void;
+  onFocus: (focus: Focus) => void; onChat: (id: string) => void; busy: boolean; saved: boolean; configured: boolean;
+  hidden: boolean; onToggle: () => void;
+}) {
+  const event = state.currentEvent;
+  return <main className="story-column">
+    <section className="scene-panel panel"><PixelScene state={state} simulation={simulation} onPersonClick={onChat} showCaption/></section>
+    <section className="focus-panel panel"><div className="section-heading"><h3>今年的重心</h3><span>{simulation.occupation}</span></div>
+      {state.age < 6 ? <div className="child-focus-note"><p>{state.age < 1 ? '还是个婴儿，正由家人照顾。' : '童年的小事，正在慢慢塑造你的性格。'} 从六岁起，可以选择每一年的生活重心。</p><p>可以调整速度，或快转到下一个抉择。</p></div> : <div className="focus-options">{FOCUS_OPTIONS.map(f => <button key={f.id} title={f.description} disabled={busy} className={state.focus === f.id ? 'selected' : ''} aria-pressed={state.focus === f.id} onClick={() => onFocus(f.id)}>{state.age < 13 ? ({ balance: '兴趣休息', study: '用心学习', career: '帮忙家事', social: '朋友玩耍', health: '多多运动' }[f.id]) : state.age < 18 && f.id === 'career' ? '课余实践' : f.label}</button>)}</div>}
     </section>
-    {!state.ended && <div className="next-year"><div className="next-year-note"><img src="/assets/riverside.png" alt=""/><div><strong>{busy ? '世界正在写下新的故事' : selected ? '一个选择，一段新的可能' : '未来还没有写好'}</strong><p>{busy ? '人物的记忆与命运，正在交织。' : e.choices.length > 0 && !selected ? '选一个方向，然后让时间继续。' : '带着此刻的心意，让故事继续。'}</p></div></div><button className="primary-button advance-button" disabled={busy || (e.choices.length > 0 && !selected)} onClick={onAdvance}>{busy ? <><LoaderCircle size={16} className="spin"/>书写中</> : <>{e.choices.length ? '确认选择' : '下个抉择'}<ArrowRight size={18}/></>}</button></div>}
-    <div className="story-bottom"><button className="text-button" onClick={onHistory}><History size={13}/>翻阅人生手记</button><span><i className={`status-dot ${configured ? 'connected' : ''}`}/>{configured ? state.config.intelligence ? 'DeepSeek 世界已连接' : '世界智能已关闭' : '本地世界 · 可在设置中连接 DeepSeek'}</span></div>
+    {event.choices.length > 0 && <section className={`story-event panel ${hidden ? 'decision-minimized' : ''}`}>
+      <div className="decision-top"><span className="decision-label">{event.source === 'deepseek' ? <><Sparkles size={12}/> AI 抉择</> : '重大抉择'}</span><span>{state.age} 岁 · {state.year} 年</span><button className="text-button" onClick={onToggle}>{hidden ? '重新展开' : '先收起来'}</button></div>
+      <h2>{event.title}</h2>
+      {hidden ? <p className="muted">时间已停下，准备好后再选择。</p> : <><p className="narrative">{event.description}</p>
+        <div className="choices" aria-label="选择你的人生方向">{event.choices.map((c, i) => <button key={c.id} disabled={busy} aria-pressed={selected === c.id} className={`choice ${selected === c.id ? 'selected' : ''}`} onClick={() => onSelect(c.id)}><span className="choice-letter">{selected === c.id ? <Check size={15}/> : i + 1}</span><span className="choice-copy"><strong>{c.label}</strong><small>{c.hint}</small></span></button>)}</div>
+        <div className="decision-confirm"><span>选择会在当年生效。</span><button className="primary-button" disabled={busy || !selected} onClick={onAdvance}>{busy ? <><LoaderCircle size={14} className="spin"/>世界正在回应</> : <>确认选择<ArrowRight size={14}/></>}</button></div>
+      </>}
+    </section>}
+    <div className="story-bottom"><span className="save-label"><Check size={12}/>{saved ? '已保存' : '存档暂未保存'}</span><span><i className={`status-dot ${configured ? 'connected' : ''}`}/>{configured ? state.config.intelligence ? 'DeepSeek 已连接' : '本地叙事' : '本地世界'}</span>{busy && <span>世界正在思考…</span>}</div>
   </main>;
 }
