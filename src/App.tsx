@@ -7,6 +7,7 @@ import WorldThreads from './components/WorldThreads';
 import Modal from './components/Modal';
 import SavePanel from './components/SavePanel';
 import SaveRecovery from './components/SaveRecovery';
+import SaveConflict from './components/SaveConflict';
 import ShareCard from './components/ShareCard';
 import { createLifeCardSvg, rasterizeLifeCard } from './lib/lifeCard';
 import type { ImportMode } from './components/SavePanel';
@@ -23,6 +24,7 @@ import { advanceSimulation, migrate, resolveSimulationDecision, secondsPerYear, 
 import type { FoundationConfig, InvestmentPolicy, Simulation } from './simulation/types.ts';
 import { downloadSave, forkBranch, loadSaveResult, MAX_BRANCHES, mergeSave, removeBranch, renameBranch, serializeSave, STORAGE_KEY, uid, updateBranch } from './lib/storage';
 import type { ClockState, SaveFile, Snapshot } from './lib/storage';
+import { createSaveWriter } from './lib/saveWriter';
 import { interruptClock, saveClock, tickClock } from './lib/clock';
 import { deriveSceneModel, renderScene } from './pixel/scene.ts';
 import { api, DEFAULT_STATUS, generateReply, generateTurn, STATIC_PREVIEW } from './lib/api';
@@ -35,6 +37,12 @@ export default function App() {
   const [loaded] = useState(loadSaveResult);
   const [save, setSave] = useState(loaded.save);
   const [recovery, setRecovery] = useState(loaded.recovery);
+  const [writer] = useState(() => createSaveWriter({ baseline: loaded.baseline, storage: {
+    getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value),
+  } }));
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(false);
+  const replacementPending = useRef(false);
   const active = save.branches.find(b => b.id === save.activeBranchId)!;
   const state = active.state;
   const simulation = active.simulation;
@@ -59,18 +67,21 @@ export default function App() {
   const [music, setMusic] = useState(false);
   const audio = useRef<AudioContext | null>(null);
   const audioBusy = useRef(false);
-  const blocked = !!recovery || inCrisis || active.stage !== 'playing' || state.ended || busy || !!dialog || !!chatId || simulation.reflectionAge !== undefined || state.currentEvent.choices.length > 0;
+  const blocked = conflict || !!recovery || inCrisis || active.stage !== 'playing' || state.ended || busy || !!dialog || !!chatId || simulation.reflectionAge !== undefined || state.currentEvent.choices.length > 0;
   const canUseModel = status.configured && state.config.intelligence > 0 && !inCrisis;
   const latestSave = useRef(save);
   useEffect(() => { latestSave.current = save; }, [save]);
   useEffect(() => { window.scrollTo(0, 0); }, [active.id, active.stage, birthDrawId]);
   useEffect(() => {
-    if (recovery) return;
+    if (recovery || conflict) return;
     const timer = setTimeout(() => {
-      try { localStorage.setItem(STORAGE_KEY, serializeSave(saveClock(save, clockRef.current))); setSaved(true); } catch { setSaved(false); }
+      if (replacementPending.current) return;
+      void persistSnapshot(saveClock(latestSave.current, clockRef.current)).catch(() => {});
     }, 0);
     return () => clearTimeout(timer);
-  }, [save, recovery]);
+    // All saves share one writer and the exact original browser-record baseline.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save, recovery, conflict]);
   useEffect(() => {
     const controller = new AbortController();
     void api<ApiStatus>('/api/status', undefined, '', controller.signal).then(setStatus).catch(() => {});
@@ -82,22 +93,37 @@ export default function App() {
     try { localStorage.setItem('otherlife-dark', String(dark)); } catch { /* display still works */ }
   }, [dark]);
   useEffect(() => {
-    if (recovery) return;
+    function inspectRecord(event: StorageEvent) {
+      if (event.storageArea !== localStorage || event.key !== null && event.key !== STORAGE_KEY) return;
+      canEdit();
+    }
+    window.addEventListener('storage', inspectRecord);
+    // Catch changes between the initial read and listener registration as well.
+    canEdit();
+    return () => window.removeEventListener('storage', inspectRecord);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [writer]);
+  useEffect(() => {
+    if (recovery || conflict) return;
     function preserveClock() {
+      if (conflictRef.current || replacementPending.current) return;
       const current = latestSave.current;
       const withClock = saveClock(current, clockRef.current);
-      try { localStorage.setItem(STORAGE_KEY, serializeSave(withClock)); } catch { /* autosave state already retained */ }
+      void persistSnapshot(withClock).catch(() => {});
     }
+    function preserveHiddenClock() { if (document.hidden) preserveClock(); }
     window.addEventListener('pagehide', preserveClock);
-    document.addEventListener('visibilitychange', preserveClock);
-    return () => { window.removeEventListener('pagehide', preserveClock); document.removeEventListener('visibilitychange', preserveClock); };
-  }, [recovery]);
+    document.addEventListener('visibilitychange', preserveHiddenClock);
+    return () => { window.removeEventListener('pagehide', preserveClock); document.removeEventListener('visibilitychange', preserveHiddenClock); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recovery, conflict]);
   useEffect(() => {
     if (blocked || clock.paused) return;
     let previous = performance.now();
     const resetElapsed = () => { previous = performance.now(); };
     document.addEventListener('visibilitychange', resetElapsed);
     const timer = setInterval(() => {
+      if (conflictRef.current) return;
       const now = performance.now();
       const result = tickClock(clockRef.current, (now - previous) / 1000, secondsPerYear(simulation), state.age < 6 ? 'balance' : state.focus, document.hidden || lock.current);
       previous = now;
@@ -110,24 +136,49 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active.id, state, simulation, blocked, clock.paused, clock.speed, clock.fastForward, canUseModel, token]);
   useEffect(() => {
-    if (clock.autoDecision && !inCrisis && !clock.paused && !state.ended && state.currentEvent.choices.length && !dialog && !chatId && !busy && active.stage === 'playing' && simulation.reflectionAge === undefined) {
+    if (!conflict && !recovery && clock.autoDecision && !inCrisis && !clock.paused && !state.ended && state.currentEvent.choices.length && !dialog && !chatId && !busy && active.stage === 'playing' && simulation.reflectionAge === undefined) {
       const choice = state.currentEvent.choices[(state.config.seed + state.turn) % state.currentEvent.choices.length];
       const timer = setTimeout(() => resolveDecision(choice.id), 700);
       return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active.id, state, simulation, clock.autoDecision, clock.paused, dialog, chatId, busy, active.stage, inCrisis]);
+  }, [active.id, state, simulation, clock.autoDecision, clock.paused, dialog, chatId, busy, active.stage, inCrisis, recovery, conflict]);
+  function stopForConflict() {
+    conflictRef.current = true;
+    setConflict(true); setSaved(false);
+    const paused = { ...clockRef.current, paused: true, fastForward: false };
+    clockRef.current = paused; setClock(paused);
+  }
+  function canEdit(): boolean {
+    if (conflictRef.current) return false;
+    try { if (!writer.checkCurrent()) { stopForConflict(); return false; } }
+    catch { /* An unavailable store may still be played in memory and exported. */ }
+    return true;
+  }
+  async function persistSnapshot(next: SaveFile) {
+    if (conflictRef.current) throw new Error('另一页已更新这段人生，请载入最新记录。');
+    try {
+      await writer.write(serializeSave(next));
+      if (!conflictRef.current) setSaved(true);
+    } catch (error) {
+      setSaved(false);
+      if (writer.conflicted) stopForConflict();
+      throw error;
+    }
+  }
   function changeClock(patch: Partial<ClockState>, persist = true) {
+    if (!canEdit()) return;
     const next = { ...clockRef.current, ...patch };
     clockRef.current = next; setClock(next);
     if (persist) setSave(s => ({ ...s, branches: s.branches.map(b => b.id === s.activeBranchId ? { ...b, clock: next } : b) }));
   }
   function apply(stateNext: GameState, simNext: Simulation, origin: Snapshot = { state, simulation }, fromRequest = false) {
-    if ((!fromRequest && lock.current) || state.ended) return;
+    if (!canEdit() || (!fromRequest && lock.current) || state.ended) return;
     const living = stateNext.people.filter(person => !person.role.endsWith('已离世'));
     const relationships = living.length ? Math.round(living.reduce((sum, person) => sum + (person.closeness + person.trust) / 2, 0) / living.length) : 20;
     const settled = { ...simNext, relationships, years: simNext.years.map(year => year.age === stateNext.age ? { ...year, relationships, health: stateNext.stats.health, happiness: stateNext.stats.happiness, knowledge: stateNext.stats.knowledge, title: stateNext.currentEvent.title } : year) };
     setSave(s => {
+      if (conflictRef.current) return s;
       const branch = s.branches.find(b => b.id === active.id);
       // A response may only replace the exact state from which it was requested.
       if (s.activeBranchId !== active.id || branch?.state !== origin.state || branch.simulation !== origin.simulation) return s;
@@ -135,7 +186,7 @@ export default function App() {
     });
   }
   async function passYear() {
-    if (lock.current || inCrisis || state.ended || state.currentEvent.choices.length || simulation.reflectionAge !== undefined) return;
+    if (!canEdit() || lock.current || inCrisis || state.ended || state.currentEvent.choices.length || simulation.reflectionAge !== undefined) return;
     lock.current = true; setBusy(true);
     const oldClock = clockRef.current;
     try {
@@ -144,12 +195,13 @@ export default function App() {
       const nextClock = { ...(interrupted ? interruptClock(oldClock) : oldClock), fraction: 0, focusWeights: {} };
       clockRef.current = nextClock; setClock(nextClock);
       setSave(s => {
+        if (conflictRef.current) return s;
         const branch = s.branches.find(b => b.id === active.id);
         if (s.activeBranchId !== active.id || branch?.state !== state || branch.simulation !== simulation) return s;
         return saveClock(updateBranch(s, result.state, result.simulation, true), nextClock);
       });
       setDecisionHidden(false);
-      if (canUseModel && !result.state.ended && (!oldClock.fastForward || result.state.currentEvent.choices.length > 0 || state.config.intelligence >= 80)) {
+      if (!conflictRef.current && canUseModel && !result.state.ended && (!oldClock.fastForward || result.state.currentEvent.choices.length > 0 || state.config.intelligence >= 80)) {
         try {
           const generated = await generateTurn(result.state, token);
           const enriched = applyGeneratedEvent(result.state, generated.event, generated.worldMessages, generated.relationshipAssessments);
@@ -161,7 +213,7 @@ export default function App() {
     finally { lock.current = false; setBusy(false); }
   }
   function resolveDecision(choiceId: string) {
-    if (lock.current || state.ended || (simulation.reflectionAge !== undefined && !inCrisis)) return;
+    if (!canEdit() || lock.current || state.ended || (simulation.reflectionAge !== undefined && !inCrisis)) return;
     try {
       const result = resolveSimulationDecision(state, simulation, choiceId);
       apply(result.state, result.simulation); setDecisionHidden(false);
@@ -169,7 +221,7 @@ export default function App() {
     } catch (error) { setToast((error as Error).message); }
   }
   async function sendMessage(text: string) {
-    if (lock.current || inCrisis || !chatId || state.ended || state.people.find(p => p.id === chatId)?.role.endsWith('已离世')) return;
+    if (!canEdit() || lock.current || inCrisis || !chatId || state.ended || state.people.find(p => p.id === chatId)?.role.endsWith('已离世')) return;
     lock.current = true; setBusy(true);
     try {
       let reply: string | undefined;
@@ -189,25 +241,31 @@ export default function App() {
   }
   function changeFocus(focus: Focus) { if (!lock.current && !inCrisis && !state.ended && state.age >= 6) apply(setFocus(state, focus), simulation); }
   function changeIntelligence(value: number) { if (!lock.current && !inCrisis && !state.ended) apply(evolveWorld(setIntelligence(state, value)), { ...simulation, config: { ...simulation.config, intelligence: value } }); }
-  function newLife(config: Partial<FoundationConfig>): boolean {
-    if (lock.current || recovery) return false;
+  async function newLife(config: Partial<FoundationConfig>): Promise<boolean> {
+    if (!canEdit() || lock.current || recovery) return false;
     const preserved = saveClock(save, clockRef.current);
     const existing = preserved.branches.filter(branch => branch.stage !== 'setup');
     if (existing.length >= MAX_BRANCHES) { setToast('已保存 8 条时间线。请在设置的“备份与载入”中备份，再移出不再保留的时间线。'); return false; }
+    lock.current = true; setBusy(true);
     try {
       const result = createBirthDraw(config); const id = uid(); const nextClock = { ...newClock(), paused: true };
       const next: SaveFile = { version: 2, activeBranchId: id, branches: [...existing, { id, name: `${result.state.config.name}的一生`, createdAt: new Date().toISOString(), ...result, snapshots: [], stage: 'certificate', clock: nextClock }] };
       // Commit the draw before its reveal: skip and refresh always retain this outcome.
-      try { localStorage.setItem(STORAGE_KEY, serializeSave(next)); setSaved(true); }
-      catch { setSaved(false); setToast('抽签结果已生成，但浏览器无法保存。请先备份这一生再关闭页面。'); }
-      setSave(next); setBirthDrawId(id);
+      replacementPending.current = true;
+      try { await persistSnapshot(next); }
+      catch {
+        if (conflictRef.current) return false;
+        setToast('抽签结果已生成，但浏览器无法保存。请先备份这一生再关闭页面。');
+      }
+      latestSave.current = next; setSave(next); setBirthDrawId(id);
       clockRef.current = nextClock; setClock(nextClock); setDialog(null); setChatId(null); setTab('story');
       return true;
     } catch (error) { setToast(error instanceof Error ? error.message : '抽签暂时没有完成，请再试一次。'); return false; }
+    finally { replacementPending.current = false; lock.current = false; setBusy(false); }
   }
-  function beginLife() { changeClock({ paused: false }); setSave(s => ({ ...s, branches: s.branches.map(b => b.id === s.activeBranchId ? { ...b, stage: 'playing' } : b) })); }
+  function beginLife() { if (!canEdit()) return; changeClock({ paused: false }); setSave(s => conflictRef.current ? s : ({ ...s, branches: s.branches.map(b => b.id === s.activeBranchId ? { ...b, stage: 'playing' } : b) })); }
   function switchBranch(id: string) {
-    if (lock.current) return;
+    if (!canEdit() || lock.current) return;
     setBirthDrawId(null);
     const preserved = saveClock(save, clockRef.current);
     const branch = preserved.branches.find(b => b.id === id);
@@ -216,8 +274,9 @@ export default function App() {
     setSave(saveClock({ ...preserved, activeBranchId: id }, nextClock));
     clockRef.current = nextClock; setClock(nextClock); setChatId(null); setDecisionHidden(false);
   }
-  function fork(snapshot: Snapshot) { if (lock.current) return; try { const forked = forkBranch(saveClock(save, clockRef.current), snapshot); setSave(forked); const c = forked.branches.at(-1)!.clock; clockRef.current = c; setClock(c); setTab('story'); setDecisionHidden(false); setToast(`已回到 ${snapshot.state.year} 年，原来的故事仍然保留。`); } catch (error) { setToast((error as Error).message); } }
+  function fork(snapshot: Snapshot) { if (!canEdit() || lock.current) return; try { const forked = forkBranch(saveClock(save, clockRef.current), snapshot); setSave(forked); const c = forked.branches.at(-1)!.clock; clockRef.current = c; setClock(c); setTab('story'); setDecisionHidden(false); setToast(`已回到 ${snapshot.state.year} 年，原来的故事仍然保留。`); } catch (error) { setToast((error as Error).message); } }
   function loadBackup(incoming: SaveFile, mode: ImportMode) {
+    if (!canEdit()) throw new Error('另一页已更新这段人生，请载入最新记录。');
     if (lock.current) throw new Error('故事还在更新，请稍后再试。');
     const current = saveClock(save, clockRef.current);
     let loaded = mode === 'merge' ? mergeSave(current, incoming) : {
@@ -237,24 +296,30 @@ export default function App() {
     setToast(mode === 'merge' ? `已加入 ${incoming.branches.length} 条时间线，原来的人生仍然保留。` : '备份已恢复，时间暂停在你离开的地方。');
   }
   function renameTimeline(id: string, name: string) {
+    if (!canEdit()) throw new Error('另一页已更新这段人生，请载入最新记录。');
     if (lock.current) throw new Error('故事还在更新，请稍后再试。');
     setSave(renameBranch(saveClock(save, clockRef.current), id, name));
     setToast('时间线名称已保存。');
   }
   function removeTimeline(id: string) {
+    if (!canEdit()) throw new Error('另一页已更新这段人生，请载入最新记录。');
     if (lock.current) throw new Error('故事还在更新，请稍后再试。');
     const next = removeBranch(saveClock(save, clockRef.current), id);
     const nextClock = next.branches.find(branch => branch.id === next.activeBranchId)!.clock;
     setSave(next); clockRef.current = nextClock; setClock(nextClock);
     setChatId(null); setBirthDrawId(null); setDecisionHidden(false);
   }
-  function recoverSave(incoming?: SaveFile) {
+  async function recoverSave(incoming?: SaveFile) {
+    if (!canEdit()) throw new Error('另一页已更新这段人生，请载入最新记录。');
     const restored = incoming ?? save;
     const paused = { ...restored, branches: restored.branches.map(branch => ({ ...branch, clock: { ...branch.clock, paused: true, fastForward: false } })) };
     // Only the explicit recovery controls may replace a rejected browser record.
-    localStorage.setItem(STORAGE_KEY, serializeSave(paused));
+    replacementPending.current = true;
+    try { await persistSnapshot(paused); }
+    catch (error) { replacementPending.current = false; throw error; }
     const nextClock = paused.branches.find(branch => branch.id === paused.activeBranchId)!.clock;
-    setSave(paused); clockRef.current = nextClock; setClock(nextClock);
+    latestSave.current = paused; setSave(paused); clockRef.current = nextClock; setClock(nextClock);
+    replacementPending.current = false;
     setSaved(true); setRecovery(undefined); setDialog(null); setChatId(null); setBirthDrawId(null); setTab('story');
   }
   function saveNote(text: string) { if (lock.current || simulation.reflectionAge === undefined || state.ended) return; const next = { ...simulation, notes: [...simulation.notes, { age: state.age, text: text.trim().slice(0, 200) }] }; delete next.reflectionAge; apply(state, next); }
@@ -305,7 +370,7 @@ export default function App() {
   }
   useEffect(() => {
     function selectWithKeyboard(event: KeyboardEvent) {
-      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || lock.current || dialog || chatId || decisionHidden || tab !== 'story' || active.stage !== 'playing' || state.ended || simulation.reflectionAge !== undefined) return;
+      if (conflictRef.current || event.repeat || event.ctrlKey || event.metaKey || event.altKey || lock.current || dialog || chatId || decisionHidden || tab !== 'story' || active.stage !== 'playing' || state.ended || simulation.reflectionAge !== undefined) return;
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || event.target.closest('input, textarea, select, button, a'))) return;
       const index = /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : /^[a-f]$/i.test(event.key) ? event.key.toLowerCase().charCodeAt(0) - 97 : -1;
       const choice = state.currentEvent.choices[index];
@@ -325,6 +390,7 @@ export default function App() {
     <span className="header-note">从随机出生开始，经历仅此一次的人生。</span>
     <div className="header-actions"><button className="settings-button" onClick={() => setDialog('settings')} aria-label="游戏设置"><Settings size={16}/><span>设置</span></button>{active.stage !== 'setup' && <button className="secondary-button" disabled={busy} onClick={() => setDialog('setup')}>新的一生</button>}</div>
   </header>;
+  if (conflict) return <SaveConflict name={state.config.name} age={state.age} year={state.year} raw={recovery?.raw} onExport={() => downloadSave(saveClock(save, clockRef.current))} onReload={() => window.location.reload()}/>;
   if (recovery) return <SaveRecovery raw={recovery.raw} message={recovery.message} onRestore={recoverSave} onReset={() => recoverSave()}/>;
   return <div className={`app-shell ${active.stage === 'playing' ? 'is-playing' : ''}`}>
     {STATIC_PREVIEW && <aside className="preview-banner" aria-label="公开试玩"><span>像素人生试玩 · 本地故事，进度保存在当前浏览器</span><a href="https://github.com/LancerLSY/life-crossroads" target="_blank" rel="noopener noreferrer">喜欢这段人生？给项目 Star ↗</a></aside>}

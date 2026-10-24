@@ -14,7 +14,7 @@ function WorldBackdrop() {
 }
 
 export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume, initialIntelligence = 60 }: {
-  onCreate: (config: Partial<FoundationConfig>) => boolean
+  onCreate: (config: Partial<FoundationConfig>) => boolean | Promise<boolean>
   onSettings: () => void; hasSaved: boolean; onResume: () => void
   initialIntelligence?: number
 }) {
@@ -40,7 +40,7 @@ export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume, initial
     setWorld(next)
     setBirthYear(next === 'past' ? 1980 : next === 'future' ? Math.min(2100, currentYear + 24) : currentYear)
   }
-  function draw(event: FormEvent) {
+  async function draw(event: FormEvent) {
     event.preventDefault()
     if (submitted.current) return
     submitted.current = true; setDrawing(true); setError('')
@@ -48,13 +48,13 @@ export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume, initial
       const random = globalThis.crypto.getRandomValues(new Uint32Array(1))[0]
       const year = world === 'any' ? 1950 + random % 151 : world === 'present' ? currentYear : birthYear
       const selectedWorld: World = world === 'any' ? year < currentYear ? 'past' : year > currentYear ? 'future' : 'present' : world
-      if (onCreate({ world: selectedWorld, birthYear: year, drawMode, paceMinutes, softMode, intelligence })) return
+      if (await onCreate({ world: selectedWorld, birthYear: year, drawMode, paceMinutes, softMode, intelligence })) return
     } catch { setError('这张签暂时没有抽出，请再试一次。') }
     submitted.current = false; setDrawing(false)
   }
   return <main className="birth-lottery">
     <header className="lottery-heading"><h1>出生，是一场<span>抽签</span>。</h1><p>你决定从哪个年代开始，其余交给命运。</p></header>
-    <form className="lottery-layout" onSubmit={draw}>
+    <form className="lottery-layout" onSubmit={event => void draw(event)}>
       <section className="lottery-stage" aria-label="出生抽签">
         <WorldBackdrop/>
         <div className="lottery-stage-bottom">

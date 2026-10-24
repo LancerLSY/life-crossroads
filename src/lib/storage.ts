@@ -26,7 +26,7 @@ export interface Branch extends Snapshot {
   clock: ClockState
 }
 export interface SaveFile { version: 2; activeBranchId: string; branches: Branch[] }
-export interface LoadSaveResult { save: SaveFile; recovery?: { raw: string; message: string } }
+export interface LoadSaveResult { save: SaveFile; baseline: string | null | undefined; recovery?: { raw: string; message: string } }
 
 export const STORAGE_KEY = 'otherlife-save-v2'
 export const MAX_SAVE_BYTES = 4_000_000
@@ -127,14 +127,15 @@ export function loadSaveResult(): LoadSaveResult {
     raw = localStorage.getItem(STORAGE_KEY)
   } catch {
     // Unavailable storage is different from a present save that must be recovered.
-    return { save: initialSave() }
+    return { save: initialSave(), baseline: undefined }
   }
-  if (raw === null) return { save: initialSave() }
+  if (raw === null) return { save: initialSave(), baseline: raw }
   try {
-    return { save: parseSave(raw) }
+    return { save: parseSave(raw), baseline: raw }
   } catch (error) {
     return {
       save: initialSave(),
+      baseline: raw,
       recovery: { raw, message: error instanceof Error ? error.message : '无法读取原有存档，请先保留原始记录。' },
     }
   }

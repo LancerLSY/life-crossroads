@@ -380,6 +380,7 @@ test('loading rejected stored bytes exposes the original raw for recovery withou
       assert.ok(validSave(result.save))
       assert.equal(result.save.branches[0].stage, 'setup')
       assert.equal(result.recovery?.raw, candidate.raw)
+      assert.equal(result.baseline, candidate.raw)
       assert.match(result.recovery!.message, candidate.reason)
       assert.equal(raw, candidate.raw)
       assert.equal(writes, 0)
@@ -399,7 +400,7 @@ test('loading valid stored data keeps its complete state and absent or unavailab
   const setItem = () => { writes++ }
   try {
     Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => raw, setItem } })
-    assert.deepEqual(loadSaveResult(), { save })
+    assert.deepEqual(loadSaveResult(), { save, baseline: raw })
     assert.deepEqual(loadSave(), save)
     for (const getItem of [() => null, () => { throw new Error('Storage unavailable') }]) {
       Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem, setItem } })
