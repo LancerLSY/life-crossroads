@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createHash } from 'node:crypto'
 import { createSimulation } from '../simulation/core.ts'
 import { createLifeCardSvg, PUBLIC_PLAY_URL } from './lifeCard.ts'
+import playLinkQr from './playLinkQr.json' with { type: 'json' }
 
 const SCENE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
 
@@ -76,5 +78,50 @@ test('card exports only selected facts and rejects external or injected scene so
   for (const secret of ['PRIVATE_TRANSCRIPT', 'PRIVATE_MODEL_RESULT', 'PRIVATE_NOTE', 'PRIVATE_API_KEY', 'PRIVATE_TOKEN']) assert.ok(!svg.includes(secret))
   for (const source of ['https://evil.test/scene.png', 'data:image/svg+xml,<svg/>', `${SCENE}" onload="alert(1)`, '']) {
     assert.throws(() => createLifeCardSvg(state, simulation, source), /本地生成的 PNG/)
+  }
+})
+
+test('fixed QR matrix preserves the validated play URL, binary modules and white quiet zone', () => {
+  assert.equal(playLinkQr.url, PUBLIC_PLAY_URL)
+  assert.equal(playLinkQr.rows.length, 43)
+  const size = playLinkQr.rows.length
+  assert.ok(playLinkQr.rows.every(row => row.length === size && /^[01]+$/.test(row)))
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (x < 4 || y < 4 || x >= size - 4 || y >= size - 4) assert.equal(playLinkQr.rows[y][x], '0')
+    }
+  }
+  assert.ok(playLinkQr.rows.some(row => row.includes('1')))
+  assert.equal(createHash('sha256').update(playLinkQr.rows.join('\n')).digest('hex'), 'a99459c6b33a8af1423d4ae3cf56f429bdf1e404bb4c3354ba9496515a81b53a')
+})
+
+test('birth and ending cards render a local crisp QR footer beside one readable play URL', () => {
+  const { state, simulation } = fixture()
+  for (const ended of [false, true]) {
+    const svg = createLifeCardSvg({ ...state, ended }, simulation, SCENE)
+    const group = svg.match(/<g id="play-link-qr"[\s\S]*?<\/g>/)?.[0]
+    assert.ok(group)
+    assert.match(group, /role="img" aria-label="扫码免费试玩人生岔路"/)
+    assert.match(group, /shape-rendering="crispEdges"/)
+    const position = group.match(/translate\((\d+) (\d+)\)/)
+    const dimensions = group.match(/<rect width="(\d+)" height="(\d+)" fill="#FFFFFF"/)
+    assert.ok(position && dimensions)
+    const [, x, y] = position.map(Number)
+    const [, width, height] = dimensions.map(Number)
+    assert.ok(x >= 24 && x + width <= 616, 'QR stays inside the card panel')
+    assert.ok(y >= 692 && y + height <= 796, 'QR fits below the divider without clipping')
+    assert.equal(width, height)
+    assert.ok(width > 0)
+    const address = [...svg.matchAll(/<text ([^>]+)>([^<]*)<\/text>/g)].find(match => match[2] === PUBLIC_PLAY_URL)
+    assert.ok(address)
+    const linkX = Number(address[1].match(/(?:^| )x="(\d+)"/)?.[1])
+    const linkY = Number(address[1].match(/(?:^| )y="(\d+)"/)?.[1])
+    const fontSize = Number(address[1].match(/font-size="(\d+)"/)?.[1])
+    assert.ok(linkX >= 24 && linkX + PUBLIC_PLAY_URL.length * fontSize * .65 < x, 'readable URL has space beside the QR')
+    assert.ok(linkY > y && linkY < y + height)
+    assert.ok(svg.includes('扫码试玩，你的人生会走向哪里？'))
+    assert.equal(svg.split(PUBLIC_PLAY_URL).length - 1, 1)
+    assert.match(group, /<path d="[^"]+" fill="#[0-9A-Fa-f]{6}"/)
+    assert.equal((svg.match(/href=/g) ?? []).length, 1)
   }
 })

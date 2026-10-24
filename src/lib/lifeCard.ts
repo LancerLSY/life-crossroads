@@ -1,10 +1,14 @@
 import type { GameState } from '../game/types.ts'
 import type { Simulation } from '../simulation/types.ts'
+import playLinkQr from './playLinkQr.json' with { type: 'json' }
 
 export const PUBLIC_PLAY_URL = 'https://lancerlsy.github.io/life-crossroads/'
 
 const CARD_WIDTH = 640
 const CARD_HEIGHT = 820
+const QR_SCALE = 2
+const QR_SIZE = playLinkQr.rows.length * QR_SCALE
+const QR_PATH = playLinkQr.rows.flatMap((row, y) => Array.from(row, (module, x) => module === '1' ? `M${x * QR_SCALE} ${y * QR_SCALE}h${QR_SCALE}v${QR_SCALE}h-${QR_SCALE}z` : '')).join('')
 
 function xml(text: string): string {
   return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').replace(/[&<>"']/g, character => ({
@@ -39,9 +43,13 @@ export function createLifeCardSvg(state: GameState, simulation: Simulation, scen
 <image x="32" y="278" width="576" height="180" href="${xml(sceneDataUrl)}" style="image-rendering:pixelated"/>
 ${details.map((line, index) => `<text x="320" y="${516 + index * 55}" text-anchor="middle" font-family="sans-serif" font-size="17" fill="#4A5A61">${xml(short(line, 32))}</text>`).join('\n')}
 <path d="M48 692H592" stroke="#C7D2CE" stroke-dasharray="4 4"/>
-<text x="320" y="727" text-anchor="middle" font-family="sans-serif" font-size="17" fill="#0F6E68">你的人生，会走向哪里？</text>
-<text x="320" y="754" text-anchor="middle" font-family="monospace" font-size="14" fill="#4A5A61">${xml(PUBLIC_PLAY_URL)}</text>
-<text x="320" y="779" text-anchor="middle" font-family="monospace" font-size="10" fill="#5F6E72">OTHERLIFE · ONE LIFE AT A TIME</text>
+<text x="48" y="727" font-family="sans-serif" font-size="17" fill="#0F6E68">扫码试玩，你的人生会走向哪里？</text>
+<text x="48" y="754" font-family="monospace" font-size="12" fill="#4A5A61">${xml(PUBLIC_PLAY_URL)}</text>
+<text x="48" y="779" font-family="monospace" font-size="10" fill="#5F6E72">OTHERLIFE · ONE LIFE AT A TIME</text>
+<g id="play-link-qr" role="img" aria-label="扫码免费试玩人生岔路" transform="translate(${CARD_WIDTH - 44 - QR_SIZE} ${CARD_HEIGHT - 30 - QR_SIZE})" shape-rendering="crispEdges">
+<rect width="${QR_SIZE}" height="${QR_SIZE}" fill="#FFFFFF"/>
+<path d="${QR_PATH}" fill="#13212A"/>
+</g>
 </svg>`
 }
 
