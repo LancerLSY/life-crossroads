@@ -11,4 +11,6 @@ React + Vite + TypeScript browser client; native Node HTTP server. No hosted dat
 
 The simulation owns time, finance, roles, milestones and mortality. Model output enriches prose and conversations; it cannot invent or bypass a tuition payment, change a resolved choice, or advance time. The full single-player simulation remains available without a key.
 
+World threads advance through contributions in distinct years, with recorded delays and explicit completed/withdrawn/lapsed/interrupted outcomes. A bounded factual ledger preserves actual paid actions, settled choices, relationship changes and reviews independently of active-story capacity. `worldContext` mirrors current simulation resources and obligations. Optional model relationship assessments must reference a current-year fact for the same living NPC; local intent-specific evidence checks, bounded values and per-evidence deduplication own the actual consequences.
+
 Production build uses `dist/`; the server is configured to provide SPA routing plus the same-origin API. Shared hosting can require `GAME_ACCESS_TOKEN` and should set an exact `GAME_PUBLIC_ORIGIN` behind HTTPS.

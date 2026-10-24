@@ -1,4 +1,4 @@
-import type { ChatReaction, GameState, Person, RelationshipAction, RelationshipHistory } from './types.ts'
+import type { ChatReaction, GameState, Person, RelationshipAction, RelationshipAssessment, RelationshipHistory } from './types.ts'
 const clamp = (n: number) => Math.min(100, Math.max(0, n))
 const normal = (s: string) => s.toLowerCase().replace(/[\s，。！？,.!?]/g, '')
 const fingerprint = (s: string) => { let h = 2166136261; for (const c of normal(s)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return (h >>> 0).toString(36) }
@@ -48,6 +48,33 @@ export function relationshipEffect(state: GameState, personId: string, key: stri
     relationshipHistory: [...(p.relationshipHistory ?? []), entry].slice(-16), memories: [...p.memories, `${state.year}年，${reason}（亲密${cd >= 0 ? '+' : ''}${cd}，信任${td >= 0 ? '+' : ''}${td}）`.slice(0, 240)].slice(-12) }
   return { ...state, stats: { ...state.stats, happiness: state.stats.happiness + hd }, people: state.people.map(item => item.id === personId ? updated : item) }
 }
+/** NPC appraisals need a present fact; prose alone cannot grant rewards or invent a grievance. */
+export function applyRelationshipAssessments(state: GameState, assessments: RelationshipAssessment[] = []): GameState {
+  if (state.ended || state.age < 6 || !Array.isArray(assessments)) return state
+  let next = state
+  const seen = new Set<string>()
+  for (const assessment of assessments.slice(0, 3)) {
+    if (!assessment || typeof assessment.reason !== 'string' || !assessment.reason.trim() || assessment.reason.length > 160 || seen.has(assessment.personId)) continue
+    const person = state.people.find(p => p.id === assessment.personId && !p.role.includes('已离世'))
+    const evidence = state.worldFacts?.find(f => f.id === assessment.evidenceId && f.year === state.year && f.personId === assessment.personId)
+    if (!person || !evidence) continue
+    let change: [number, number, number, string] | undefined
+    if (assessment.intent === 'neglected') {
+      const thread = state.worldThreads?.find(t => evidence.id === `review:${t.id}:${state.year}` && t.personId === person.id && (t.stalledYears ?? 0) >= 2)
+      if (evidence.kind === 'decision' && thread) change = [-2, -1, -1, '觉得被冷落，期待更明确的行动']
+    } else if (assessment.intent === 'appreciated') {
+      const thread = state.worldThreads?.find(t => evidence.id === `decision:${t.id}:${state.year}` && t.personId === person.id && t.milestones?.some(m => m.year === state.year && m.kind === 'action'))
+      if (evidence.kind === 'decision' && thread) change = [1, 1, 0, '注意到了你的实际投入']
+    } else if (assessment.intent === 'hurt' && evidence.kind === 'relationship' && person.relationshipHistory?.some(h => evidence.id === `relationship:${h.id}` && h.year === state.year && (h.closenessDelta < 0 || h.trustDelta < 0))) {
+      change = [0, 0, 0, '仍在意之前的伤害']
+    }
+    if (!change) continue
+    seen.add(person.id)
+    next = relationshipEffect(next, person.id, 'assessment:annual', 'experience', `对方的感受：${assessment.reason}`.slice(0, 240), ...change)
+  }
+  return next
+}
+
 function promise(state: GameState, personId: string, kind: 'company' | 'help'): GameState {
   return { ...state, people: state.people.map(p => {
     if (p.id !== personId || (p.commitments ?? []).some(c => c.kind === kind && (c.status === 'pending' || c.createdYear === state.year))) return p

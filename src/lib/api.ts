@@ -1,4 +1,4 @@
-import type { ChatReaction, GameState, LifeEvent, WorldMessage } from '../game/types.ts';
+import type { ChatReaction, GameState, LifeEvent, RelationshipAssessment, WorldMessage } from '../game/types.ts';
 export interface ApiStatus { configured: boolean; provider: string; model: string; requiresAccessToken: boolean }
 export const DEFAULT_STATUS: ApiStatus = { configured: false, provider: 'DeepSeek', model: 'deepseek-flash', requiresAccessToken: false };
 export async function api<T>(path: string, body?: unknown, token = '', signal?: AbortSignal): Promise<T> {
@@ -14,5 +14,5 @@ export async function api<T>(path: string, body?: unknown, token = '', signal?: 
   }
   return response.json() as Promise<T>;
 }
-export const generateTurn = (state: GameState, token: string) => api<{ event: LifeEvent; worldMessages: WorldMessage[]; source: string }>('/api/turn', { state }, token);
+export const generateTurn = (state: GameState, token: string) => api<{ event: LifeEvent; worldMessages: WorldMessage[]; relationshipAssessments?: RelationshipAssessment[]; source: string }>('/api/turn', { state }, token);
 export const generateReply = (state: GameState, personId: string, message: string, token: string) => api<{ reply: string; source: string; reaction?: ChatReaction }>('/api/chat', { state, personId, message }, token);

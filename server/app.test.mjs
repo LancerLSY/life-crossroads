@@ -380,6 +380,240 @@ test('turn prompt carries active world causes and pending choices without advanc
   assert.deepEqual(input, before);
 });
 
+function continuousState() {
+  return state({
+    worldContext: { year: 2009, location: '杭州', occupation: '大学生', education: '本科在读',
+      cash: 1800, debt: 6000, annualIncome: 12000, annualExpenses: 14500, dependents: 1 },
+    worldFacts: [
+      { id: 'fact-1', year: 2008, kind: 'study', summary: '支付课程费用，开始为资格考试做准备。', location: '杭州' },
+      { id: 'fact-2', year: 2009, kind: 'relationship', summary: '向许安承诺明年陪伴；尚未履行。', personId: 'friend-1' },
+      { id: 'fact-3', year: 2009, kind: 'repay', summary: '偿还部分贷款，余额仍为6000。' },
+    ],
+    worldThreads: [
+      { id: 'study-plan', title: '继续准备资格考试', cause: '2008年报名学习', stage: 2, status: 'active', direction: 'support',
+        impact: '仍需复习，不能只等待考试结果', startedYear: 2008, nextYear: 2010, domain: 'learning', location: '杭州',
+        milestones: [{ year: 2008, kind: 'origin', text: '开始备考' }, { year: 2009, kind: 'delay', text: '因预算不足暂停课程' }],
+        lastActionYear: 2008, lastEvaluatedYear: 2009, stalledYears: 1 },
+      { id: 'friend-exhibit', personId: 'friend-1', title: '与许安完成摄影展', cause: '上年聊起摄影', stage: 3, status: 'resolved',
+        direction: 'support', impact: '展览已经结束，留下共同经历', startedYear: 2008, nextYear: 2009, domain: 'community', location: '杭州',
+        milestones: [{ year: 2008, kind: 'origin', text: '邀请参加展览' }, { year: 2009, kind: 'action', text: '布置展览' },
+          { year: 2009, kind: 'outcome', text: '展览顺利结束' }],
+        lastActionYear: 2009, lastEvaluatedYear: 2009, stalledYears: 0, outcome: 'completed' },
+    ],
+  });
+}
+
+test('turn and chat receive current resources and the complete bounded causal trail without inventing completion', async (t) => {
+  const payloads = [];
+  const base = await appServer(t, { fetch: async (_, options) => {
+    payloads.push(JSON.parse(options.body));
+    return modelResponse(payloads.length === 1 ? generated() : { reply: '考试仍在准备中，先照顾眼前的预算。' });
+  } });
+  const input = continuousState();
+  // Older causal evidence remains available even when there are many newer facts.
+  input.worldFacts.push(...Array.from({ length: 45 }, (_, index) => ({ id: `recent-${index}`, year: 2009, kind: 'decision', summary: `本年已作出的决定${index}` })));
+  input.worldContext.untrustedExtra = 'should not be forwarded';
+  input.worldThreads[0].untrustedExtra = 'should not be forwarded';
+  const before = globalThis.structuredClone(input);
+  assert.equal((await post(base, '/api/turn', { state: input })).status, 200);
+  assert.equal((await post(base, '/api/chat', { state: input, personId: 'friend-1', message: '关于上次的计划，你怎么看？' })).status, 200);
+  for (const payload of payloads) {
+    const context = JSON.parse(payload.messages[1].content);
+    const { untrustedExtra: omitted, ...expectedContext } = input.worldContext;
+    assert.equal(omitted, 'should not be forwarded');
+    assert.deepEqual(context.worldContext, expectedContext);
+    assert.deepEqual(context.worldFacts, input.worldFacts);
+    assert.equal(context.worldFacts.length, 48);
+    const { untrustedExtra: omittedThread, ...expectedThread } = input.worldThreads[0];
+    assert.equal(omittedThread, omitted);
+    assert.deepEqual(context.worldThreads, [expectedThread, input.worldThreads[1]]);
+    assert.equal(context.worldThreads[0].personId, undefined);
+    assert.match(payload.messages[0].content, /资源、债务和家庭责任/u);
+    assert.match(payload.messages[0].content, /不能把建议、邀请、愿望、未选选项或待履行承诺写成已经完成/u);
+    assert.match(payload.messages[0].content, /未经后续行动的计划保持未完成/u);
+    assert.match(payload.messages[0].content, /不能把撤回、失效或中断写成成功/u);
+    assert.match(payload.messages[0].content, /不要凭空创造共同往事/u);
+  }
+  assert.deepEqual(input, before);
+});
+
+test('causal save extensions accept personal plans, bounded resources and legacy unresolved outcomes', () => {
+  const input = continuousState();
+  assert.ok(isGameState(input));
+  for (const outcome of ['completed', 'withdrawn', 'lapsed', 'interrupted', undefined]) {
+    const changed = globalThis.structuredClone(input);
+    changed.worldThreads[1].outcome = outcome;
+    assert.ok(isGameState(changed), String(outcome));
+  }
+  for (const amount of [0, 1e12]) {
+    const changed = globalThis.structuredClone(input);
+    for (const field of ['cash', 'debt', 'annualIncome', 'annualExpenses']) changed.worldContext[field] = amount;
+    assert.ok(isGameState(changed));
+  }
+  const legacy = state();
+  assert.ok(isGameState(legacy));
+  const maxThreads = globalThis.structuredClone(input);
+  maxThreads.worldThreads = [
+    ...Array.from({ length: 3 }, (_, index) => ({ ...input.worldThreads[0], id: `active-${index}` })),
+    ...Array.from({ length: 6 }, (_, index) => ({ ...input.worldThreads[1], id: `resolved-${index}` })),
+  ];
+  assert.ok(isGameState(maxThreads));
+  maxThreads.worldThreads[8] = { ...input.worldThreads[0], id: 'fourth-active' };
+  assert.equal(isGameState(maxThreads), false);
+  maxThreads.worldThreads = Array.from({ length: 7 }, (_, index) => ({ ...input.worldThreads[1], id: `resolved-${index}` }));
+  assert.equal(isGameState(maxThreads), false);
+});
+
+test('malformed resources, causal facts and thread milestones are rejected before provider work', async (t) => {
+  const corruptions = [
+    input => { input.worldContext = null; },
+    input => { input.worldContext.year++; },
+    input => { input.worldContext.year--; },
+    input => { input.worldContext.location = '另一座城市'; },
+    input => { input.worldContext.occupation = 'a'.repeat(101); },
+    input => { input.worldContext.education = 'a'.repeat(101); },
+    ...['cash', 'debt', 'annualIncome', 'annualExpenses'].flatMap(field => [-1, 1e12 + 1, null, '100'].map(value => input => { input.worldContext[field] = value; })),
+    ...[-1, 13, 1.5, '1'].map(value => input => { input.worldContext.dependents = value; }),
+    input => { input.worldFacts = null; },
+    input => { input.worldFacts = [null]; },
+    input => { input.worldFacts.push(input.worldFacts[0]); },
+    input => { input.worldFacts = Array.from({ length: 49 }, (_, index) => ({ ...input.worldFacts[0], id: `fact-${index}` })); },
+    input => { input.worldFacts[0].id = 'a'.repeat(181); },
+    input => { input.worldFacts[0].year = 2007; },
+    input => { input.worldFacts[0].year = 2010; },
+    input => { input.worldFacts[0].kind = 'fiction'; },
+    input => { input.worldFacts[0].summary = 'a'.repeat(321); },
+    input => { input.worldFacts[0].personId = 'missing'; },
+    input => { input.worldFacts[0].location = 'a'.repeat(101); },
+    input => { input.worldThreads[0].personId = null; },
+    input => { input.worldThreads[0].domain = 'fiction'; },
+    input => { input.worldThreads[0].location = 'a'.repeat(101); },
+    input => { input.worldThreads[0].milestones = null; },
+    input => { input.worldThreads[0].milestones = [null]; },
+    input => { input.worldThreads[0].milestones = Array.from({ length: 9 }, () => ({ year: 2008, kind: 'action', text: '重复' })); },
+    input => { input.worldThreads[0].milestones[0].year = 2007; },
+    input => { input.worldThreads[0].milestones[0].year = 2010; },
+    input => { input.worldThreads[0].milestones.reverse(); },
+    input => { input.worldThreads[0].milestones[0].kind = 'proposal'; },
+    input => { input.worldThreads[0].milestones[0].text = 'a'.repeat(241); },
+    ...['lastActionYear', 'lastEvaluatedYear'].flatMap(field => [2007, 2010, 2008.5, null].map(value => input => { input.worldThreads[0][field] = value; })),
+    ...[-1, 4, 1.5, null].map(value => input => { input.worldThreads[0].stalledYears = value; }),
+    input => { input.worldThreads[0].outcome = 'completed'; },
+    input => { input.worldThreads[1].outcome = 'success'; },
+  ];
+  let calls = 0;
+  const base = await appServer(t, { config: { rateLimit: 1000 }, fetch: async () => { calls++; return modelResponse(generated()); } });
+  for (const [index, corrupt] of corruptions.entries()) {
+    const input = continuousState(); corrupt(input);
+    assert.equal(isGameState(input), false, `corruption ${index}`);
+    const result = await post(base, '/api/turn', { state: input });
+    assert.equal(result.status, 400, `corruption ${index}`);
+    assert.equal(result.body.error.code, 'INVALID_STATE');
+  }
+  assert.equal(calls, 0);
+});
+
+function assessmentState() {
+  const input = continuousState();
+  input.people.push({ ...input.people[0], id: 'friend-3', name: '陈越', messages: [], relationshipHistory: [
+    { id: 'hurt-1', year: 2009, source: 'chat', key: 'hostility', reason: '受到侮辱', closenessDelta: -5, trustDelta: -7 },
+  ] });
+  Object.assign(input.worldThreads[0], { personId: 'friend-2', stalledYears: 2 });
+  input.worldFacts.push(
+    { id: 'review:study-plan:2009', year: 2009, kind: 'decision', personId: 'friend-2', summary: '共同计划已经持续两年没有实际推进。' },
+    { id: 'decision:friend-exhibit:2009', year: 2009, kind: 'decision', personId: 'friend-1', summary: '实际参与布置展览。' },
+    { id: 'relationship:hurt-1', year: 2009, kind: 'relationship', personId: 'friend-3', summary: '受到侮辱，亲密-5，信任-7。' },
+  );
+  return input;
+}
+
+const groundedAssessments = () => [
+  { personId: 'friend-2', intent: 'neglected', reason: '共同的备考安排连续搁置，让周晴感到自己的时间没有被重视。', evidenceId: 'review:study-plan:2009' },
+  { personId: 'friend-1', intent: 'appreciated', reason: '主角实际参与布展，让许安感到支持。', evidenceId: 'decision:friend-exhibit:2009' },
+  { personId: 'friend-3', intent: 'hurt', reason: '本年的侮辱让陈越仍然难过。', evidenceId: 'relationship:hurt-1' },
+];
+
+test('annual NPC assessments preserve grounded disappointment and hurt without returning model numeric effects', async (t) => {
+  let payload;
+  const assessments = groundedAssessments();
+  const base = await appServer(t, { fetch: async (_, options) => {
+    payload = JSON.parse(options.body);
+    return modelResponse(generated({ relationshipAssessments: assessments.map(item => ({ ...item, closenessDelta: -100, trust: 0, effects: { happiness: -100 } })) }));
+  } });
+  const result = await post(base, '/api/turn', { state: assessmentState() });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.relationshipAssessments, assessments);
+  assert.equal(result.body.event.id, 'event-now');
+  const context = JSON.parse(payload.messages[1].content);
+  assert.equal(context.worldThreads[0].stalledYears, 2);
+  assert.ok(context.worldFacts.some(fact => fact.id === assessments[0].evidenceId));
+  assert.match(payload.messages[0].content, /每年主动从在世NPC的立场分析/u);
+  assert.match(payload.messages[0].content, /可以失望、冷淡或不满，但不捏造委屈/u);
+  assert.match(payload.messages[0].content, /不要自动表扬所有人/u);
+  assert.match(payload.messages[0].content, /不能再次惩罚同一行为/u);
+});
+
+test('unfounded or malformed assessments are dropped while the valid current-year event survives', async (t) => {
+  const input = assessmentState();
+  input.worldFacts.push({ id: 'review:study-plan:2008', year: 2008, kind: 'decision', personId: 'friend-2', summary: '上年的回顾。' });
+  const valid = groundedAssessments()[0];
+  const outputs = [
+    undefined, null, {}, 'neglected', [null], [{ ...valid, personId: 'unknown' }],
+    [{ ...valid, evidenceId: 'review:study-plan:2010' }], [{ ...valid, evidenceId: 'review:study-plan:2008' }],
+    [{ ...valid, evidenceId: 'missing' }], [{ ...valid, personId: 'friend-1' }],
+    [{ ...valid, reason: '' }], [{ ...valid, reason: 'a'.repeat(161) }], [{ ...valid, evidenceId: 'a'.repeat(181) }],
+    [{ ...valid, intent: 'makeEnemy' }], [{ ...valid, intent: 'appreciated' }],
+    [{ ...groundedAssessments()[1], intent: 'neglected' }], [{ ...groundedAssessments()[1], intent: 'hurt' }],
+  ];
+  let index = 0;
+  const base = await appServer(t, { fetch: async () => modelResponse(generated({ relationshipAssessments: outputs[index++] })) });
+  for (const output of outputs) {
+    const result = await post(base, '/api/turn', { state: input });
+    assert.equal(result.status, 200, JSON.stringify(output));
+    assert.equal(result.body.relationshipAssessments, undefined, JSON.stringify(output));
+    assert.equal(result.body.event.id, input.currentEvent.id);
+  }
+});
+
+test('assessment intent gates require a stalled review, an actual action or an existing negative relationship delta', async (t) => {
+  const cases = [
+    { assessment: groundedAssessments()[0], corrupt: input => { input.worldThreads[0].stalledYears = 1; } },
+    { assessment: groundedAssessments()[0], corrupt: input => { input.worldThreads[0].personId = 'friend-1'; } },
+    { assessment: groundedAssessments()[0], corrupt: input => { input.worldFacts.at(-3).kind = 'relationship'; } },
+    { assessment: groundedAssessments()[1], corrupt: input => { input.worldThreads[1].milestones = [{ year: 2008, kind: 'origin', text: '只是提出邀请' }]; } },
+    { assessment: groundedAssessments()[1], corrupt: input => { input.worldThreads[1].milestones.find(item => item.kind === 'action').year = 2008; } },
+    { assessment: groundedAssessments()[2], corrupt: input => { input.people[2].relationshipHistory[0].closenessDelta = 0; input.people[2].relationshipHistory[0].trustDelta = 0; } },
+    { assessment: groundedAssessments()[2], corrupt: input => { input.people[2].relationshipHistory[0].year = 2008; } },
+    { assessment: groundedAssessments()[2], corrupt: input => { input.people[2].role += ' · 已离世'; } },
+  ];
+  let selected;
+  const base = await appServer(t, { fetch: async () => modelResponse(generated({ relationshipAssessments: [selected] })) });
+  for (const example of cases) {
+    const input = assessmentState(); example.corrupt(input); selected = example.assessment;
+    assert.ok(isGameState(input));
+    const result = await post(base, '/api/turn', { state: input });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.relationshipAssessments, undefined);
+  }
+});
+
+test('assessment filtering keeps at most three unique living NPCs and preserves reply-only turn compatibility', async (t) => {
+  const input = assessmentState();
+  input.people.push({ ...input.people[1], id: 'friend-4', name: '乔安' });
+  input.worldFacts.push({ id: 'neutral-4', year: 2009, kind: 'decision', personId: 'friend-4', summary: '说明近况。' });
+  const assessments = groundedAssessments();
+  let output = { relationshipAssessments: [null, { ...assessments[0], reason: '' }, assessments[0], assessments[0], assessments[1], assessments[2],
+    { personId: 'friend-4', intent: 'neutral', reason: '了解近况。', evidenceId: 'neutral-4' }] };
+  const base = await appServer(t, { fetch: async () => modelResponse(generated(output)) });
+  const result = await post(base, '/api/turn', { state: input });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.relationshipAssessments, assessments);
+  output = {};
+  const legacy = await post(base, '/api/turn', { state: state() });
+  assert.equal(legacy.status, 200);
+  assert.equal(legacy.body.relationshipAssessments, undefined);
+});
+
 test('chat propagates bounded intent only, strips model effects, and preserves reply-only compatibility', async (t) => {
   const reactions = [
     { intent: 'care', reason: '关心近况', trust: 100, closeness: 100, unknown: 'do not forward', relationshipStrain: 0 },

@@ -30,7 +30,7 @@
 
 画面采用程序绘制的像素场景。婴儿、学生、成年人和长者会有不同外观；家人、住宅与生活状态也会进入画面。你可以暂停、快转，或者回到过去的某个选择前，保留原来的未来，重新展开另一条时间线。
 
-目前是中文界面的本地运行预览版，177项测试通过，桌面和手机布局已检查。出生背景有明确的数据来源和估算说明，特殊剧情的概率单独标为虚构设定。
+目前是中文界面的本地运行预览版，205项测试通过，桌面和手机布局已检查。出生背景有明确的数据来源和估算说明，特殊剧情的概率单独标为虚构设定。
 
 代码、叙事和像素美术独立实现。
 
@@ -48,7 +48,7 @@ I wanted small actions to leave consequences: spending, travel and conversations
 
 The game runs locally without an API key. An optional DeepSeek connection adds NPC dialogue and contextual narration, while local rules control time, money and consequential choices. Pixel scenes change as the protagonist and household age.
 
-The interface is currently in Chinese. This is a self-hosted preview with 177 passing tests, not a hosted web demo.
+The interface is currently in Chinese. This is a self-hosted preview with 205 passing tests, not a hosted web demo.
 
 Code and setup: https://github.com/LancerLSY/life-crossroads
 

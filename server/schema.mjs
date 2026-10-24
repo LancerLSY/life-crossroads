@@ -71,6 +71,37 @@ function validWorldMessage(value) {
     && (value.target === undefined || text(value.target, 100)) && text(value.text, 1500) && year(value.year);
 }
 
+function validWorldContext(value, currentYear, currentLocation) {
+  return value === undefined || object(value) && value.year === currentYear && value.location === currentLocation
+    && text(value.location, 100)
+    && text(value.occupation, 100) && text(value.education, 100)
+    && ['cash', 'debt', 'annualIncome', 'annualExpenses'].every(key => number(value[key], 0, 1e12))
+    && integer(value.dependents, 0, 12);
+}
+
+function validWorldFacts(value, currentYear, firstYear, peopleIds) {
+  if (value === undefined) return true;
+  return list(value, 48) && value.every(item => object(item) && text(item.id, 180)
+    && integer(item.year, firstYear, currentYear)
+    && ['health', 'study', 'social', 'travel', 'home', 'repay', 'invest', 'migrate', 'relationship', 'decision', 'outcome'].includes(item.kind)
+    && text(item.summary, 320) && (item.personId === undefined || peopleIds.has(item.personId))
+    && (item.location === undefined || text(item.location, 100)))
+    && new Set(value.map(item => item.id)).size === value.length;
+}
+
+function validThreadContinuity(item, currentYear) {
+  if (item.domain !== undefined && !['family', 'learning', 'community', 'health', 'finance', 'travel', 'relocation'].includes(item.domain)) return false;
+  if (item.location !== undefined && !text(item.location, 100)) return false;
+  if (item.lastActionYear !== undefined && !integer(item.lastActionYear, item.startedYear, currentYear)) return false;
+  if (item.lastEvaluatedYear !== undefined && !integer(item.lastEvaluatedYear, item.startedYear, currentYear)) return false;
+  if (item.stalledYears !== undefined && !integer(item.stalledYears, 0, 3)) return false;
+  if (item.outcome !== undefined && (item.status !== 'resolved' || !['completed', 'withdrawn', 'lapsed', 'interrupted'].includes(item.outcome))) return false;
+  return item.milestones === undefined || list(item.milestones, 8) && item.milestones.every((milestone, index, milestones) => object(milestone)
+    && integer(milestone.year, item.startedYear, currentYear)
+    && (index === 0 || milestone.year >= milestones[index - 1].year)
+    && ['origin', 'action', 'delay', 'relationship', 'outcome'].includes(milestone.kind) && text(milestone.text, 240));
+}
+
 function validWorldThreads(value, currentYear, firstYear, peopleIds) {
   if (value === undefined) return true;
   if (!list(value, 9)) return false;
@@ -79,10 +110,11 @@ function validWorldThreads(value, currentYear, firstYear, peopleIds) {
   let active = 0;
   let resolved = 0;
   return value.every(item => {
-    if (!object(item) || !text(item.id, 180) || ids.has(item.id) || !peopleIds.has(item.personId)
+    if (!object(item) || !text(item.id, 180) || ids.has(item.id) || (item.personId !== undefined && !peopleIds.has(item.personId))
       || !text(item.title, 140) || !text(item.cause, 1000) || !text(item.impact, 1000)
       || ![1, 2, 3].includes(item.stage) || !['support', 'distance', 'conflict'].includes(item.direction)
-      || !integer(item.startedYear, firstYear, currentYear) || !integer(item.nextYear, item.startedYear, currentYear + 3)) return false;
+      || !integer(item.startedYear, firstYear, currentYear) || !integer(item.nextYear, item.startedYear, currentYear + 3)
+      || !validThreadContinuity(item, currentYear)) return false;
     ids.add(item.id);
     if (item.status === 'active') active++;
     else if (item.status === 'resolved') resolved++;
@@ -106,6 +138,8 @@ export function isGameState(value) {
     || !integer(value.turn, 0, 1000) || (value.ending !== undefined && !text(value.ending, 5000))) return false;
   const peopleIds = new Set(value.people.map((person) => person.id));
   return validWorldThreads(value.worldThreads, value.year, value.config.birthYear + value.config.startAge, peopleIds)
+    && validWorldContext(value.worldContext, value.year, value.config.location)
+    && validWorldFacts(value.worldFacts, value.year, value.config.birthYear + value.config.startAge, peopleIds)
     && (value.worldUpdatedYear === undefined || integer(value.worldUpdatedYear, value.config.birthYear + value.config.startAge, value.year))
     && peopleIds.size === value.people.length && value.history.every((event) => validEvent(event, peopleIds))
     && validEvent(value.currentEvent, peopleIds) && value.currentEvent.year === value.year && value.currentEvent.age === value.age;
@@ -116,6 +150,32 @@ export function worldLimits(intelligence) {
     speakers: intelligence === 0 ? 0 : Math.min(3, 1 + Math.floor(intelligence / 35)),
     messages: intelligence === 0 ? 0 : Math.min(7, 2 + Math.floor(intelligence / 20)),
   };
+}
+
+function parseRelationshipAssessments(value, state, people) {
+  if (!Array.isArray(value)) return [];
+  const accepted = [];
+  const seenPeople = new Set();
+  const facts = new Map((state.worldFacts ?? []).filter(fact => fact.year === state.year).map(fact => [fact.id, fact]));
+  for (const input of value) {
+    if (accepted.length === 3) break;
+    if (!object(input) || !identifier(input.personId) || seenPeople.has(input.personId)
+      || !['appreciated', 'neglected', 'hurt', 'neutral'].includes(input.intent)
+      || !text(input.reason, 160) || !text(input.evidenceId, 180)) continue;
+    const person = people.find(candidate => candidate.id === input.personId);
+    const evidence = facts.get(input.evidenceId);
+    if (!person || evidence?.personId !== person.id) continue;
+    if (input.intent === 'neglected' && (evidence.kind !== 'decision' || !(state.worldThreads ?? []).some(thread =>
+      thread.personId === person.id && evidence.id === `review:${thread.id}:${state.year}` && thread.stalledYears >= 2))) continue;
+    if (input.intent === 'appreciated' && (evidence.kind !== 'decision' || !(state.worldThreads ?? []).some(thread =>
+      thread.personId === person.id && evidence.id === `decision:${thread.id}:${state.year}`
+        && thread.milestones?.some(milestone => milestone.year === state.year && milestone.kind === 'action')))) continue;
+    if (input.intent === 'hurt' && (evidence.kind !== 'relationship' || !person.relationshipHistory?.some(entry =>
+      entry.year === state.year && evidence.id === `relationship:${entry.id}` && (entry.closenessDelta < 0 || entry.trustDelta < 0)))) continue;
+    seenPeople.add(person.id);
+    accepted.push({ personId: person.id, intent: input.intent, reason: input.reason.trim(), evidenceId: evidence.id });
+  }
+  return accepted;
 }
 
 export function parseGeneratedTurn(value, state) {
@@ -149,10 +209,12 @@ export function parseGeneratedTurn(value, state) {
       ...(target === undefined ? {} : { target }), text: message.text.trim(), year: state.year };
   });
   if (speakers.size > worldLimits(state.config.intelligence).speakers) invalid();
+  const relationshipAssessments = parseRelationshipAssessments(value.relationshipAssessments, state, people);
   return {
     event: { id: state.currentEvent.id, year: state.year, age: state.age, kind: input.kind,
       title: input.title.trim(), description: input.description.trim(), choices, source: 'deepseek' },
     worldMessages,
+    ...(relationshipAssessments.length ? { relationshipAssessments } : {}),
     source: 'deepseek',
   };
 }

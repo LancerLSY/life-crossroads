@@ -1,6 +1,6 @@
-import { applyChatReaction, applyRelationshipAction, classifyReaction, settleCommitments, validateRelationshipData, relationshipStrain, updateRelationshipStrain } from './relationships.ts'
-import type { ChatReaction, RelationshipAction } from './types.ts'
-import { evolveWorld, validateWorldThreads, worldThreadEvent } from './world.ts'
+import { applyChatReaction, applyRelationshipAction, applyRelationshipAssessments, classifyReaction, settleCommitments, validateRelationshipData, relationshipStrain, updateRelationshipStrain } from './relationships.ts'
+import type { ChatReaction, RelationshipAction, RelationshipAssessment } from './types.ts'
+import { evolveWorld, recordWorldChanges, validateWorldContext, validateWorldFacts, validateWorldThreads, worldChoiceAvailable, worldThreadEvent } from './world.ts'
 import type { Choice, Focus, GameState, LifeConfig, LifeEvent, Person, StatKey, Stats, WorldMessage } from './types.ts'
 
 export type { Choice, ChatMessage, Focus, GameState, LifeConfig, LifeEvent, Person, StatKey, Stats, WorldMessage } from './types.ts'
@@ -333,6 +333,7 @@ function requireChoice(state: GameState, choiceId: string): Choice {
   const matches = choices.filter(choice => record(choice) && choice.id === choiceId)
   if (matches.length !== 1) throw new Error('这个选择已不属于当前年份，请重新选择。')
   const choice = matches[0]!
+  if (!worldChoiceAvailable(state, choice)) throw new Error('这项安排的条件已经变化，请重新查看当前选择。')
   if (!boundedString(choice.id, 180) || !boundedString(choice.label, 100) || !boundedString(choice.hint, 160) || !record(choice.effects)) throw new Error('这个选择的数据不完整，请重新载入有效存档。')
   const effects = choice.effects
   if (Object.keys(effects).some(key => !STAT_KEYS.includes(key as StatKey) || !boundedNumber(effects[key as StatKey], -25, 25))) throw new Error('这个选择的数值无效，请重新载入有效存档。')
@@ -395,12 +396,13 @@ function applyChoiceEffects(state: GameState, choice?: Choice, annual?: { stats:
   return { ...state, stats, people }
 }
 
-export function resolveChoice(state: GameState, choiceId: string): GameState {
+export function resolveChoice(state: GameState, choiceId: string, options: { world?: 'engine' | 'external' } = {}): GameState {
   if (state.ended) throw new Error('这一生的选择已经珍藏。')
   const choice = requireChoice(state, choiceId)
-  const resolved = applyChoiceEffects(state, choice)
+  const resolved = recordWorldChanges(state, applyChoiceEffects(state, choice))
   const outcome = `\n你选择了：${choice.label}。`
-  return evolveWorld({ ...resolved, worldUpdatedYear: state.year, currentEvent: { ...state.currentEvent, description: state.currentEvent.description.slice(0, 3000 - outcome.length) + outcome, choices: [] } }, choice)
+  const next = { ...resolved, worldUpdatedYear: state.year, currentEvent: { ...state.currentEvent, description: state.currentEvent.description.slice(0, 3000 - outcome.length) + outcome, choices: [] } }
+  return options.world === 'external' ? next : evolveWorld(next, choice)
 }
 
 export function advanceYear(state: GameState, choiceId?: string, options: { mortality?: 'engine' | 'external'; world?: 'engine' | 'external' } = {}): GameState {
@@ -410,7 +412,8 @@ export function advanceYear(state: GameState, choiceId?: string, options: { mort
   const choice = choiceId === undefined ? undefined : requireChoice(state, choiceId)
   const annualStats = { ...focusEffects(state) }
   annualStats.health = (annualStats.health ?? 0) + (state.age >= 75 ? -3 : state.age >= 55 ? -2 : -1)
-  const applied = evolveWorld({ ...applyChoiceEffects(state, choice, { stats: annualStats, socialDrift: state.focus === 'social' ? 1 : 0 }), worldUpdatedYear: state.year }, choice)
+  let applied = recordWorldChanges(state, { ...applyChoiceEffects(state, choice, { stats: annualStats, socialDrift: state.focus === 'social' ? 1 : 0 }), worldUpdatedYear: state.year })
+  if (options.world !== 'external') applied = evolveWorld(applied, choice)
   const stats = applied.stats
   const age = state.age + 1
   const departures: string[] = []
@@ -439,7 +442,8 @@ export function advanceYear(state: GameState, choiceId?: string, options: { mort
   if ((age === 26 || age === 62) && !people.some(item => item.id === 'neighbor')) people.push(person('neighbor', ['唐时雨', '陆星河', '叶闻溪'][state.config.seed % 3]!, age < 60 ? '新朋友' : '邻居', age + 1, '热心，幽默，喜欢和别人一起把日子过得有趣', 4))
   const resolved: LifeEvent = { ...state.currentEvent, kind: choice ? 'choice' : state.currentEvent.kind, description: `${state.currentEvent.description}${choice ? `\n你选择了：${choice.label}。` : ''}${departures.length ? `\n${departures.join('\n')}` : ''}`.slice(0, 3400), choices: [] }
   let next: GameState = { ...applied, config: { ...state.config }, age, year: state.config.birthYear + age, stats, people, history: [...state.history, resolved], turn: state.turn + 1, ended: options.mortality !== 'external' && (age >= 90 || stats.health <= 0), worldMessages: [...state.worldMessages] }
-  next = settleCommitments(next)
+  delete next.worldContext
+  next = recordWorldChanges(next, settleCommitments(next))
   if (next.ended) next.ending = makeEnding(next)
   next.currentEvent = makeEvent(next)
   if (options.world !== 'external') {
@@ -473,16 +477,16 @@ export function interact(state: GameState, personId: string, message: string, re
     memories: [...target.memories, `${state.year}年，你和我聊起「${text.slice(0, 100)}」。${harsh ? '有些话伤到了彼此，需要重新建立信任。' : ''}`].slice(-12),
     messages: [...target.messages, { id: `chat-${token}-u`, role: 'user' as const, text, year: state.year }, { id: `chat-${token}-a`, role: 'assistant' as const, text: response, year: state.year }].slice(-40),
   }
-  return evolveWorld(applyChatReaction({ ...state, worldUpdatedYear: state.year, people: state.people.map(item => item.id === personId ? updated : item) }, personId, text, interpreted))
+  return evolveWorld(recordWorldChanges(state, applyChatReaction({ ...state, worldUpdatedYear: state.year, people: state.people.map(item => item.id === personId ? updated : item) }, personId, text, interpreted)))
 }
 
 export function performRelationshipAction(state: GameState, personId: string, action: RelationshipAction): GameState {
-  return evolveWorld({ ...applyRelationshipAction(state, personId, action), worldUpdatedYear: state.year })
+  return evolveWorld(recordWorldChanges(state, { ...applyRelationshipAction(state, personId, action), worldUpdatedYear: state.year }))
 }
 
 export function setFocus(state: GameState, focus: Focus): GameState {
   if (!FOCUSES.includes(focus)) throw new Error('请选择有效的生活重心。')
-  return { ...state, focus }
+  return evolveWorld({ ...state, focus, worldUpdatedYear: state.year })
 }
 
 export function setIntelligence(state: GameState, value: number): GameState {
@@ -491,7 +495,7 @@ export function setIntelligence(state: GameState, value: number): GameState {
 
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 
-export function applyGeneratedEvent(state: GameState, event: LifeEvent, worldMessages: WorldMessage[] = []): GameState {
+export function applyGeneratedEvent(state: GameState, event: LifeEvent, worldMessages: WorldMessage[] = [], assessments: RelationshipAssessment[] = []): GameState {
   if (state.ended || !record(event)) return state
   if (state.currentEvent.choices.length === 0 && state.currentEvent.description.includes('\n你选择了：')) return state
   const incoming = event as unknown as Record<string, unknown>
@@ -522,7 +526,9 @@ export function applyGeneratedEvent(state: GameState, event: LifeEvent, worldMes
     return [{ id: `${state.id}-generated-world-${state.turn}-${index}`, speaker: speaker.name, ...(targetName ? { target: targetName } : {}), text, year: state.year }]
   }) : []
   const ids = new Set(messages.map(item => item.id))
-  return { ...state, currentEvent, worldMessages: [...state.worldMessages.filter(item => !ids.has(item.id)), ...messages].slice(-40) }
+  const narrated = { ...state, currentEvent, worldMessages: [...state.worldMessages.filter(item => !ids.has(item.id)), ...messages].slice(-40) }
+  const assessed = applyRelationshipAssessments(narrated, assessments)
+  return assessed === narrated ? narrated : evolveWorld(recordWorldChanges(narrated, assessed))
 }
 
 const boundedString = (value: unknown, max: number, allowEmpty = false): value is string => typeof value === 'string' && value.length <= max && (allowEmpty || value.trim().length > 0)
@@ -549,6 +555,7 @@ export function isGameState(value: unknown): value is GameState {
     })
     if (!peopleValid || !uniqueIds(value.people as { id: string }[])) return false
     if (!validateWorldThreads(value.worldThreads, value.year as number, new Set((value.people as Person[]).map(person => person.id)))) return false
+    if (!validateWorldContext(value.worldContext, value.year as number, config.location as string) || !validateWorldFacts(value.worldFacts, config.birthYear + config.startAge, value.year as number, new Set((value.people as Person[]).map(person => person.id)))) return false
     if (value.worldUpdatedYear !== undefined && !boundedNumber(value.worldUpdatedYear, config.birthYear + config.startAge, value.year as number, true)) return false
     if (Array.isArray(value.worldThreads) && value.worldThreads.some(thread => thread.startedYear < (config.birthYear as number) + (config.startAge as number))) return false
     const peopleIds = new Set((value.people as Person[]).filter(isPresent).map(person => person.id))

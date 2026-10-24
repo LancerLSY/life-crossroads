@@ -110,6 +110,15 @@ const relationshipScore = (state: GameState) => {
   return people.length ? Math.round(people.reduce((sum, person) => sum + (person.closeness + person.trust) / 2, 0) / people.length) : 20
 }
 
+export function syncWorldContext(state: GameState, simulation: Simulation): GameState {
+  return { ...state, worldContext: {
+    year: state.year, location: state.config.location, occupation: simulation.occupation,
+    education: simulation.education, cash: simulation.economy.cash, debt: simulation.economy.debt,
+    annualIncome: simulation.economy.annualIncome, annualExpenses: simulation.economy.annualExpenses,
+    dependents: state.people.filter(person => present(person) && /孩子/.test(person.role) && person.age < 18).length,
+  } }
+}
+
 function yearRecord(state: GameState, simulation: Simulation, marker?: YearRecord['marker']): YearRecord {
   return {
     age: state.age, year: state.year, health: state.stats.health, happiness: state.stats.happiness, knowledge: state.stats.knowledge,
@@ -144,6 +153,7 @@ function baseSimulation(config: FoundationConfig): SimulationResult {
     education: '尚未入学', educationLevel: 'none', schoolUntil: 0, occupation: '由家人照顾', workYears: 0, retired: false,
     currentCountryId: country.id, children: 0, relationships: relationshipScore(state), temperament: { curiosity: 50, activity: 50, sociability: 50, persistence: 50 }, peers: [], years: [], notes: [], starred: [], reflectedAges: [],
   }
+  state = syncWorldContext(state, simulation)
   simulation.years = [yearRecord(state, simulation, 'birth')]
   return { state, simulation }
 }
@@ -318,7 +328,7 @@ function investmentRate(policy: InvestmentPolicy, random: () => number): number 
   return mean + (random() * 2 - 1) * spread
 }
 
-function finances(state: GameState, simulation: Simulation, weights: Record<Focus, number>, extraCost: number, incomeFactor: number): void {
+function finances(state: GameState, simulation: Simulation, weights: Record<Focus, number>, incomeFactor: number): void {
   const country = conditions(simulation, state.year)
   const economy = simulation.economy
   const random = rng(simulation.config.seed, `finances-${state.age}`)
@@ -338,7 +348,7 @@ function finances(state: GameState, simulation: Simulation, weights: Record<Focu
   let expenses = state.age < 16 ? 0 : country.gdp * (simulation.occupation === '学生' ? .12 : .17) * (simulation.economy.homeOwned ? .83 : 1)
   expenses += country.gdp * dependentChildren * .055 + (spouse ? country.gdp * .08 : 0)
   if (simulation.occupation === '学生' && ['university', 'postgraduate'].includes(simulation.educationLevel)) expenses += country.gdp * .12
-  expenses += economy.debt * .045 + extraCost
+  expenses += economy.debt * .045
   economy.annualIncome = money(income)
   economy.annualExpenses = money(expenses)
   economy.totalIncome = money(economy.totalIncome + economy.annualIncome)
@@ -418,16 +428,19 @@ function copySimulation(previous: Simulation): Simulation {
 
 /** Resolve a pending decision without moving the simulated clock or settling an annual budget. */
 export function resolveSimulationDecision(original: GameState, previous: Simulation, choiceId: string): SimulationResult {
-  if (crisisActive(previous) || choiceId.startsWith('surprise:mmr:')) return resolveMyanmarDecision(original, previous, choiceId)
+  if (crisisActive(previous) || choiceId.startsWith('surprise:mmr:')) {
+    const result = resolveMyanmarDecision(original, previous, choiceId)
+    return { ...result, state: syncWorldContext(result.state, result.simulation) }
+  }
   // Engine validation rejects stale IDs before any simulation or cash mutations occur.
-  const resolved = resolveChoice(original, choiceId)
+  const resolved = resolveChoice(syncWorldContext(original, previous), choiceId, { world: 'external' })
   const choice = original.currentEvent.choices.find(item => item.id === choiceId)!
   const simulation = copySimulation(previous)
   const applied = consequences(resolved, simulation, choice, original.age)
-  applied.state = evolveWorld(applied.state)
   if (simulation.myanmarInjury) applied.state = { ...applied.state, stats: { ...applied.state.stats, health: Math.min(applied.state.stats.health, 65) } }
   if (applied.cost > 0) charge(simulation, applied.cost, true)
   if (applied.incomeFactor !== 1) simulation.pendingIncomeFactor = (simulation.pendingIncomeFactor ?? 1) * applied.incomeFactor
+  applied.state = evolveWorld(syncWorldContext(applied.state, simulation), choice)
   simulation.relationships = relationshipScore(applied.state)
   simulation.years[simulation.years.length - 1] = yearRecord(applied.state, simulation, applied.marker ?? previous.years.at(-1)?.marker)
   return { state: applied.state, simulation }
@@ -461,30 +474,27 @@ function localizeNewContacts(state: GameState, original: GameState, simulation: 
   }
 }
 
-function step(original: GameState, previous: Simulation, choiceId?: string, weightedFocus?: FocusWeights): SimulationResult {
+function step(original: GameState, previous: Simulation, weightedFocus?: FocusWeights): SimulationResult {
   if (original.ended) return { state: original, simulation: previous }
   if (crisisActive(previous)) throw new Error('请先处理当前隐藏危机。')
   const simulation = copySimulation(previous)
-  const choice = original.currentEvent.choices.find(item => item.id === choiceId)
   const weights = focusWeights(original, weightedFocus)
-  let state = localizeNewContacts(advanceYear(original, choiceId, { mortality: 'external', world: 'external' }), original, simulation)
+  let state = localizeNewContacts(advanceYear(syncWorldContext(original, simulation), undefined, { mortality: 'external', world: 'external' }), original, simulation)
   if (state.people.length > 12) state = { ...state, people: state.people.filter(person => person.id !== 'neighbor') }
   const socialAdjustment = weights.social - (original.focus === 'social' ? 1 : 0)
-  if (socialAdjustment) state = { ...state, people: state.people.map(person => present(person) && person.id !== choice?.personId ? { ...person, closeness: clamp(person.closeness + socialAdjustment), trust: clamp(person.trust + weights.social * .7 - (original.focus === 'social' ? 1 : 0)) } : person) }
-  const applied = consequences(state, simulation, choice, original.age)
-  state = applied.state
+  if (socialAdjustment) state = { ...state, people: state.people.map(person => present(person) ? { ...person, closeness: clamp(person.closeness + socialAdjustment), trust: clamp(person.trust + weights.social * .7 - (original.focus === 'social' ? 1 : 0)) } : person) }
   if (state.age >= simulation.schoolUntil && simulation.occupation === '学生' && simulation.schoolUntil > 0) simulation.education = educationLabel(simulation.educationLevel, true)
   const country = conditions(simulation, state.year)
-  finances(state, simulation, weights, applied.cost, applied.incomeFactor * (simulation.pendingIncomeFactor ?? 1))
+  finances(state, simulation, weights, simulation.pendingIncomeFactor ?? 1)
   delete simulation.pendingIncomeFactor
   const random = rng(simulation.config.seed, `status-${state.age}`)
   const learning = simulation.occupation === '学生' ? 2.2 : state.age < 6 ? 1.8 : .18
   const healthTarget = clamp(82 + (country.lifeExpectancy - 72) * .35 - Math.max(0, state.age - 40) * .72, 25, 92)
   const happinessTarget = clamp(52 + simulation.birth.familyQuintile * 2 + simulation.relationships * .12 - Math.min(20, simulation.economy.debt / Math.max(1, country.gdp) * 2), 20, 83)
   state = { ...state, stats: {
-    health: Math.round(clamp(original.stats.health + (healthTarget - original.stats.health) * .12 + weights.health * 2.7 + weights.balance * .45 - weights.career * .8 + (choice?.effects.health ?? 0) * .65 + (random() - .5) * 3)),
-    happiness: Math.round(clamp(original.stats.happiness + (happinessTarget - original.stats.happiness) * .16 + weights.social * 1.8 + weights.balance * .6 + (choice?.effects.happiness ?? 0) * .6 + (random() - .5) * 3)),
-    knowledge: Math.round(clamp(original.stats.knowledge + learning + weights.study * 2 + (choice?.effects.knowledge ?? 0) * .65 - (state.age >= 80 ? 1.3 : 0))),
+    health: Math.round(clamp(original.stats.health + (healthTarget - original.stats.health) * .12 + weights.health * 2.7 + weights.balance * .45 - weights.career * .8 + (random() - .5) * 3)),
+    happiness: Math.round(clamp(original.stats.happiness + (happinessTarget - original.stats.happiness) * .16 + weights.social * 1.8 + weights.balance * .6 + (random() - .5) * 3)),
+    knowledge: Math.round(clamp(original.stats.knowledge + learning + weights.study * 2 - (state.age >= 80 ? 1.3 : 0))),
     wealth: Math.round(clamp(35 + Math.log1p(Math.max(0, netWorth(simulation)) / Math.max(1, country.gdp)) * 18 - Math.min(30, simulation.economy.debt / Math.max(1, country.gdp) * 7))),
   } }
   if (simulation.myanmarInjury) state = { ...state, stats: { ...state.stats, health: Math.min(state.stats.health, 65) } }
@@ -501,18 +511,20 @@ function step(original: GameState, previous: Simulation, choiceId?: string, weig
     simulation.reflectedAges.push(state.age)
     simulation.reflectionAge = state.age
   }
+  state = syncWorldContext(state, simulation)
   state = evolveWorld({ ...state, currentEvent: nextEvent(state, simulation) })
   state = { ...state, currentEvent: worldThreadEvent(state) ?? state.currentEvent }
   // Mark birth-country peers' departures in the year at which the player reaches them.
   const departures = simulation.peers.filter(peer => peer.deathAge === state.age)
   if (departures.length && !state.ended) state = { ...state, currentEvent: { ...state.currentEvent, description: `${state.currentEvent.description}\n${departures.map(peer => `与你同年出生的${peer.name}，在${peer.deathAge}岁结束了这一生。`).join('\n')}`.slice(0, 3000) } }
-  const marker = state.ended ? 'death' : applied.marker
+  const marker = state.ended ? 'death' : undefined
   simulation.years.push(yearRecord(state, simulation, marker))
   return { state, simulation }
 }
 
 export function advanceSimulation(state: GameState, simulation: Simulation, choiceId?: string, weightedFocus?: FocusWeights): SimulationResult {
-  return step(state, simulation, choiceId, weightedFocus)
+  const resolved = choiceId === undefined || state.ended ? { state, simulation } : resolveSimulationDecision(state, simulation, choiceId)
+  return step(resolved.state, resolved.simulation, weightedFocus)
 }
 
 export function secondsPerYear(simulation: Simulation): number {
@@ -613,11 +625,12 @@ export function spend(previous: Simulation, original: GameState, action: 'health
   if (simulation.myanmarInjury) state.stats.health = Math.min(state.stats.health, 65)
   const contact = action === 'travel' || action === 'social' ? actionContact(state, simulation, action, experienceCountryId) : { state }
   state = contact.state
+  let participantId = contact.personId
   if (action === 'social' || action === 'travel') {
-    const participant = action === 'social' ? state.people.find(person => present(person) && (person.id === 'friend' || person.role === '伴侣'))?.id ?? contact.personId : contact.personId
-    if (participant) state = relationshipEffect(state, participant, `experience:${action}:${experienceCountryId}`, 'experience', action === 'social' ? '你们实际参加了一次聚会，留下共同经历。' : '你们在旅途中交流见闻，留下共同经历。', 2, 1)
+    participantId = action === 'social' ? state.people.find(person => present(person) && (person.id === 'friend' || person.role === '伴侣'))?.id ?? contact.personId : contact.personId
+    if (participantId) state = relationshipEffect(state, participantId, `experience:${action}:${experienceCountryId}`, 'experience', action === 'social' ? '你们实际参加了一次聚会，留下共同经历。' : '你们在旅途中交流见闻，留下共同经历。', 2, 1)
   }
-  state = recordWorldAction(state, { kind: action, amount: money(previous.economy.cash - simulation.economy.cash), location: action === 'travel' && destinationCountryId ? countryById(destinationCountryId).name : country.name, personId: contact.personId })
+  state = recordWorldAction(syncWorldContext(state, simulation), { kind: action, amount: money(previous.economy.cash - simulation.economy.cash), location: action === 'travel' && destinationCountryId ? countryById(destinationCountryId).name : country.name, ...(participantId ? { personId: participantId } : {}) })
   simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, simulation.years.at(-1)?.marker)
   if (action === 'travel' && destinationCountryId === 'MMR' && previous.currentCountryId !== 'MMR') return visitMyanmar(state, simulation, `travel:${state.year}:MMR`)
@@ -639,7 +652,7 @@ export function migrate(original: GameState, previous: Simulation, countryId: st
   const oldFriend = state.people.find(person => person.id === 'friend' && present(person))
   if (oldFriend) state = relationshipEffect(state, oldFriend.id, `experience:distance:${countryId}`, 'experience', `你迁居到${country.name}，与留在原地的老朋友见面变少，需要重新安排联系。`, -2, 0)
   const contact = actionContact(state, simulation, 'migrate')
-  state = recordWorldAction(contact.state, { kind: 'migrate', amount: expense, location: country.name, personId: contact.personId })
+  state = recordWorldAction(syncWorldContext(contact.state, simulation), { kind: 'migrate', amount: expense, location: country.name, ...(contact.personId ? { personId: contact.personId } : {}) })
   simulation.relationships = relationshipScore(state)
   simulation.years[simulation.years.length - 1] = yearRecord(state, simulation, 'move')
   if (countryId === 'MMR') return visitMyanmar(state, simulation, `migrate:${state.year}:MMR`)

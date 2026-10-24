@@ -318,7 +318,7 @@ function findEvent(age: number, title: string): GameState {
 }
 
 function neutralYear(state: GameState): GameState {
-  return choose({ ...state, currentEvent: { ...state.currentEvent, choices: [{ id: `${state.currentEvent.id}-neutral`, label: '照顾眼前的生活', hint: '按照自己的节奏前进', effects: {} }] } })
+  return choose({ ...state, currentEvent: { ...state.currentEvent, choices: [{ id: 'test-neutral', label: '照顾眼前的生活', hint: '按照自己的节奏前进', effects: {} }] } })
 }
 
 function readyForPartnership(): GameState {
@@ -663,7 +663,7 @@ test('chat changes a world follow-up without advancing stages or creating annual
   const active = state.worldThreads!.find(thread => thread.status === 'active')!
   const count = state.worldThreads!.length
   const before = copy(state)
-  const chatted = interact(state, active.personId, '闭嘴')
+  const chatted = interact(state, active.personId!, '闭嘴')
   const after = chatted.worldThreads!.find(thread => thread.id === active.id)!
   assert.equal(after.direction, 'conflict')
   assert.equal(after.stage, active.stage)

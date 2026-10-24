@@ -525,3 +525,24 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+.world-threads .world-thread { overflow-wrap: anywhere; }
+.world-threads .world-thread header { align-items: flex-start; flex-wrap: wrap; line-height: 1.7; }
+.world-threads .thread-status { padding: 1px 5px; border: 1px solid var(--line); color: var(--muted); }
+.world-threads .thread-status.completed { border-color: var(--teal); color: var(--teal); }
+.world-threads .thread-direction > svg { flex-shrink: 0; }
+.world-threads .thread-stages { flex-shrink: 0; }
+.world-threads .thread-reason-label { display: block; margin-bottom: 2px; color: var(--muted); font-size: 10px; }
+.world-threads .world-thread .thread-earlier { margin-top: 8px; font-size: 10px; }
+.world-threads .thread-history { margin-top: 10px; }
+.world-threads .thread-history > summary,
+.world-threads .world-recent-facts > summary { cursor: pointer; color: var(--teal); font-size: 11px; line-height: 1.8; }
+.world-threads .thread-history > summary:focus-visible,
+.world-threads .world-recent-facts > summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.world-threads .thread-history ol,
+.world-threads .world-recent-facts ol { margin: 9px 0 0; padding: 0; list-style: none; }
+.world-threads .thread-history li,
+.world-threads .world-recent-facts li { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-top: 1px dashed var(--line); font-size: 11px; line-height: 1.8; }
+.world-threads .thread-history time,
+.world-threads .world-recent-facts time { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.world-threads .world-recent-facts { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }

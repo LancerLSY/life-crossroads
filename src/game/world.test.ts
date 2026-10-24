@@ -51,10 +51,14 @@ test('unresolved plans continue annually and choices close or complete them', ()
   state.worldThreads = [thread(state)]
   state.worldUpdatedYear = state.year
   state = evolveWorld(followingYear(state))
-  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.stage, 2)
+  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.stage, 1)
   const event = worldThreadEvent(state)!
   state = evolveWorld(state, event.choices[0])
-  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.status, 'resolved')
+  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.stage, 2)
+  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.status, 'active')
+  state = evolveWorld(followingYear(state))
+  state = evolveWorld(state, worldThreadEvent(state, 'example')!.choices[0])
+  assert.equal(state.worldThreads!.find(item => item.id === 'example')!.outcome, 'completed')
   const manual = life()
   manual.worldThreads = [thread(manual)]
   manual.worldUpdatedYear = manual.year
@@ -86,6 +90,8 @@ test('decades of continuation retain bounded active and resolved records and all
   let linked = false
   for (let index = 0; index < 60; index++) {
     state = evolveWorld(state)
+    const event = worldThreadEvent(state)
+    if (event) state = evolveWorld(state, event.choices[0])
     const threads = state.worldThreads!
     linked ||= threads.some(item => item.relatedThreadId)
     assert.ok(threads.filter(item => item.status === 'active').length <= 3)

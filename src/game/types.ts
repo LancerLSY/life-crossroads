@@ -14,6 +14,12 @@ export interface ChatReaction {
   reason: string
   commitment?: 'company' | 'help'
 }
+export interface RelationshipAssessment {
+  personId: string
+  intent: 'appreciated' | 'neglected' | 'hurt' | 'neutral'
+  reason: string
+  evidenceId: string
+}
 export type RelationshipAction = 'listen' | 'company' | 'help' | 'apologize' | 'promise-company' | 'promise-help' | 'cancel-promise'
 export interface RelationshipHistory {
   id: string
@@ -110,11 +116,39 @@ export interface GameState {
   turn: number
   worldThreads?: WorldThread[]
   worldUpdatedYear?: number
+  worldContext?: WorldContext
+  worldFacts?: WorldFact[]
+}
+
+export interface WorldContext {
+  year: number
+  location: string
+  occupation: string
+  education: string
+  cash: number
+  debt: number
+  annualIncome: number
+  annualExpenses: number
+  dependents: number
+}
+export type WorldActionKind = 'health' | 'study' | 'social' | 'travel' | 'home' | 'repay' | 'invest' | 'migrate'
+export interface WorldFact {
+  id: string
+  year: number
+  kind: WorldActionKind | 'relationship' | 'decision' | 'outcome'
+  summary: string
+  personId?: string
+  location?: string
+}
+export interface WorldMilestone {
+  year: number
+  kind: 'origin' | 'action' | 'delay' | 'relationship' | 'outcome'
+  text: string
 }
 
 export interface WorldThread {
   id: string
-  personId: string
+  personId?: string
   title: string
   cause: string
   stage: 1 | 2 | 3
@@ -124,4 +158,11 @@ export interface WorldThread {
   startedYear: number
   nextYear: number
   relatedThreadId?: string
+  domain?: 'family' | 'learning' | 'community' | 'health' | 'finance' | 'travel' | 'relocation'
+  location?: string
+  milestones?: WorldMilestone[]
+  lastActionYear?: number
+  lastEvaluatedYear?: number
+  stalledYears?: number
+  outcome?: 'completed' | 'withdrawn' | 'lapsed' | 'interrupted'
 }

@@ -16,7 +16,7 @@ import type { SpendAction } from './components/FoundationViews';
 import { applyGeneratedEvent, interact, performRelationshipAction, setFocus, setIntelligence } from './game/engine.ts';
 import { evolveWorld } from './game/world.ts';
 import type { ChatReaction, Focus, GameState, RelationshipAction } from './game/types.ts';
-import { advanceSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend } from './simulation/core.ts';
+import { advanceSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend, syncWorldContext } from './simulation/core.ts';
 import type { FoundationConfig, InvestmentPolicy, Simulation } from './simulation/types.ts';
 import { downloadSave, forkBranch, loadSave, MAX_BRANCHES, mergeSave, renameBranch, serializeSave, STORAGE_KEY, uid, updateBranch } from './lib/storage';
 import type { ClockState, SaveFile, Snapshot } from './lib/storage';
@@ -115,11 +115,14 @@ export default function App() {
   }
   function apply(stateNext: GameState, simNext: Simulation, origin: Snapshot = { state, simulation }, fromRequest = false) {
     if ((!fromRequest && lock.current) || state.ended) return;
+    const living = stateNext.people.filter(person => !person.role.endsWith('已离世'));
+    const relationships = living.length ? Math.round(living.reduce((sum, person) => sum + (person.closeness + person.trust) / 2, 0) / living.length) : 20;
+    const settled = { ...simNext, relationships, years: simNext.years.map(year => year.age === stateNext.age ? { ...year, relationships, health: stateNext.stats.health, happiness: stateNext.stats.happiness, knowledge: stateNext.stats.knowledge, title: stateNext.currentEvent.title } : year) };
     setSave(s => {
       const branch = s.branches.find(b => b.id === active.id);
       // A response may only replace the exact state from which it was requested.
       if (s.activeBranchId !== active.id || branch?.state !== origin.state || branch.simulation !== origin.simulation) return s;
-      return updateBranch(s, stateNext, simNext);
+      return updateBranch(s, syncWorldContext(stateNext, settled), settled);
     });
   }
   async function passYear() {
@@ -140,7 +143,7 @@ export default function App() {
       if (canUseModel && !result.state.ended && (!oldClock.fastForward || result.state.currentEvent.choices.length > 0 || state.config.intelligence >= 80)) {
         try {
           const generated = await generateTurn(result.state, token);
-          const enriched = applyGeneratedEvent(result.state, generated.event, generated.worldMessages);
+          const enriched = applyGeneratedEvent(result.state, generated.event, generated.worldMessages, generated.relationshipAssessments);
           apply(enriched, result.simulation, result, true);
           if (enriched.currentEvent.choices.length > 0) changeClock(interruptClock(clockRef.current));
         } catch (error) { setToast(error instanceof Error ? error.message : '世界暂时忙碌，本地故事继续。'); }
@@ -168,9 +171,7 @@ export default function App() {
     finally { lock.current = false; setBusy(false); }
   }
   function syncRelationship(next: GameState, fromRequest = false) {
-    const living = next.people.filter(person => !person.role.endsWith('已离世'));
-    const relationships = living.length ? Math.round(living.reduce((sum, person) => sum + (person.closeness + person.trust) / 2, 0) / living.length) : 20;
-    apply(next, { ...simulation, relationships, years: simulation.years.map(year => year.age === state.age ? { ...year, relationships, happiness: next.stats.happiness } : year) }, { state, simulation }, fromRequest);
+    apply(next, simulation, { state, simulation }, fromRequest);
   }
   function relationshipAction(action: RelationshipAction) {
     if (lock.current || inCrisis || !chatId || state.ended) return;

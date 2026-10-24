@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { isGameState, setFocus } from '../game/engine.ts'
+import { visitMyanmar } from './myanmar.ts'
 import { COUNTRIES, countryAt } from './countries.ts'
-import { advanceSimulation, createSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend, survivalAt, validateSimulation } from './core.ts'
+import { advanceSimulation, createSimulation, migrate, resolveSimulationDecision, secondsPerYear, setInvestment, spend, survivalAt, syncWorldContext, validateSimulation } from './core.ts'
 import type { FoundationConfig, SimulationResult } from './types.ts'
 
 function choose(result: SimulationResult, preferred?: string): string | undefined {
@@ -14,6 +15,19 @@ function until(result: SimulationResult, age: number): SimulationResult {
   while (!result.state.ended && result.state.age < age) result = advanceSimulation(result.state, result.simulation, choose(result))
   return result
 }
+
+test('policy fees refresh the exact financial context sent to the model', () => {
+  let result = until(createSimulation({ seed: 1917, countryId: 'JPN' }), 25)
+  const amount = Math.min(1000, result.simulation.economy.cash)
+  result = spend(result.simulation, result.state, 'invest', amount)
+  const previous = result.state.worldContext!.annualExpenses
+  const changed = setInvestment(result.simulation, 'balanced')
+  const state = syncWorldContext(result.state, changed)
+  assert.ok(changed.economy.annualExpenses > previous)
+  assert.equal(state.worldContext!.annualExpenses, changed.economy.annualExpenses)
+  assert.equal(state.worldContext!.cash, changed.economy.cash)
+  assert.ok(isGameState(state))
+})
 
 function survivingSeed(countryId = 'JPN'): SimulationResult {
   for (let seed = 1; seed < 100; seed++) {
@@ -93,7 +107,8 @@ test('20 complete life courses remain coherent and account for all annual cash f
       assert.equal(previous.simulation.years.length + 1, result.simulation.years.length)
       assert.ok(isGameState(result.state), `invalid game state, seed${seed}, age${result.state.age}`)
       const economy = result.simulation.economy
-      assert.ok(Math.abs(netWorth(result) - netWorth(previous) - economy.annualIncome + economy.annualExpenses - economy.investmentReturn) < .05, `ledger mismatch, seed${seed}, age${result.state.age}`)
+      const expenses = economy.totalExpenses - previous.simulation.economy.totalExpenses
+      assert.ok(Math.abs(netWorth(result) - netWorth(previous) - economy.annualIncome + expenses - economy.investmentReturn) < .05, `ledger mismatch, seed${seed}, age${result.state.age}`)
       if (result.state.age < 16) assert.equal(economy.annualIncome, 0)
       for (const stat of Object.values(result.state.stats)) assert.ok(stat >= 0 && stat <= 100 && Number.isFinite(stat))
       assert.ok(economy.cash >= 0 && economy.debt >= 0 && economy.investments >= 0)
@@ -253,12 +268,12 @@ test('partnership and children retain identities, age, and household obligations
   result = advanceSimulation(result.state, result.simulation, 'sim:family:child')
   assert.equal(result.simulation.children, 1)
   const child = result.state.people.find(person => person.id === 'child-1')
-  assert.equal(child?.age, 0)
+  assert.equal(child?.age, 1)
   assert.ok(child?.name)
   const income = result.simulation.economy.annualIncome
   assert.ok(income > 0)
   result = advanceSimulation(result.state, result.simulation, result.state.currentEvent.choices[0]?.id)
-  assert.equal(result.state.people.find(person => person.id === 'child-1')?.age, 1)
+  assert.equal(result.state.people.find(person => person.id === 'child-1')?.age, 2)
   assert.equal(result.state.people.find(person => person.id === 'child-1')?.name, child?.name)
   assert.ok(result.simulation.economy.annualExpenses > 0)
   assert.ok(isGameState(result.state))
@@ -530,7 +545,7 @@ test('travel and migration introduce bounded local contacts without replacing ex
   }
   assert.ok(result.state.people.length <= 12)
   assert.equal(result.state.year, year)
-  assert.match(result.state.worldThreads!.find(thread => thread.id.startsWith('action-migrate-'))!.cause, /印度/)
+  assert.match(result.state.worldFacts!.find(fact => fact.kind === 'migrate')!.summary, /印度/)
   assert.ok(isGameState(result.state))
 })
 
@@ -597,4 +612,113 @@ test('overseas travel uses destination contacts and per-destination experience w
   assert.ok(local.relationshipYear?.keys.includes('experience:travel:MMR'))
   assert.equal(myanmar.simulation.currentCountryId, 'JPN')
   assert.deepEqual(myanmar.simulation.birth, base.simulation.birth)
+})
+
+test('combined advancement exactly matches same-year resolution followed by a year across complete lives', () => {
+  for (const seed of [1, 918, 815]) {
+    let result = createSimulation({ seed, countryId: 'JPN', birthYear: 2000, intelligence: 100 })
+    while (!result.state.ended) {
+      const choiceId = choose(result)
+      const before = structuredClone(result)
+      const resolved = choiceId ? resolveSimulationDecision(result.state, result.simulation, choiceId) : result
+      const separate = advanceSimulation(resolved.state, resolved.simulation, undefined, { social: .4, study: .6 })
+      const combined = advanceSimulation(result.state, result.simulation, choiceId, { social: .4, study: .6 })
+      assert.deepEqual(combined, separate, `settlement paths diverged at age ${result.state.age}, ${choiceId ?? 'ordinary year'}`)
+      assert.deepEqual(result, before, 'neither settlement path may mutate the prior snapshot')
+      assert.ok(isGameState(combined.state))
+      assert.ok(validateSimulation(combined.simulation))
+      result = combined
+    }
+    assert.equal(result.simulation.years.at(-1)?.marker, 'death')
+  }
+})
+
+test('one-off fees, full choice effects, relationships and saved income adjustments share one settlement path', () => {
+  const base = survivingSeed()
+  const acquaintance = base.state.people.find(person => person.id === 'acquaintance')!
+  for (const id of ['sim:care:treatment', 'sim:family:care', 'sim:bond:meet-35', 'sim:family:child', 'sim:work:retrain']) {
+    const choice = { id, label: '落实这一年的安排', hint: '根据实际行动结算', effects: { health: 14, happiness: 3, knowledge: 6 }, personId: acquaintance.id, relationshipDelta: 8 }
+    const original = { state: { ...base.state, stats: { health: 35, happiness: 30, knowledge: 30, wealth: 40 }, currentEvent: { ...base.state.currentEvent, choices: [choice] } }, simulation: { ...base.simulation, economy: { ...base.simulation.economy, cash: 0 }, pendingIncomeFactor: .9 } }
+    const before = structuredClone(original)
+    const resolved = resolveSimulationDecision(original.state, original.simulation, id)
+    assert.equal(resolved.state.stats.health, 49, 'the full immediate choice effect is retained')
+    assert.equal(resolved.state.people.find(person => person.id === acquaintance.id)!.closeness, Math.min(100, acquaintance.closeness + 8))
+    const separate = advanceSimulation(resolved.state, JSON.parse(JSON.stringify(resolved.simulation)))
+    assert.deepEqual(advanceSimulation(original.state, original.simulation, id), separate)
+    assert.equal(separate.simulation.pendingIncomeFactor, undefined)
+    if (id === 'sim:family:care') assert.equal(resolved.simulation.pendingIncomeFactor, .765)
+    if (id === 'sim:care:treatment' || id.startsWith('sim:bond:') || id === 'sim:work:retrain') {
+      assert.ok(resolved.simulation.economy.debt > original.simulation.economy.debt)
+      assert.ok(resolved.simulation.economy.totalExpenses > original.simulation.economy.totalExpenses)
+    }
+    assert.deepEqual(original, before)
+  }
+})
+
+test('combined settlement respects mandatory choices, crisis phases, and same-year fatal endings', () => {
+  const child = until(createSimulation({ seed: 1, countryId: 'JPN', birthYear: 2000 }), 6)
+  const before = structuredClone(child)
+  assert.throws(() => advanceSimulation(child.state, child.simulation), /请先选择/)
+  assert.throws(() => advanceSimulation(child.state, child.simulation, 'stale-choice'))
+  assert.deepEqual(child, before)
+  const adult = survivingSeed()
+  let crisis = visitMyanmar(adult.state, { ...adult.simulation, config: { ...adult.simulation.config, seed: 1 } }, `travel:${adult.state.year}:MMR`)
+  assert.equal(crisis.simulation.crisis?.fatalRoute, true)
+  while (crisis.simulation.crisis?.phase !== 'resolved') {
+    const choiceId = crisis.state.currentEvent.choices[0]!.id
+    const snapshot = structuredClone(crisis)
+    const resolved = resolveSimulationDecision(crisis.state, crisis.simulation, choiceId)
+    if (resolved.state.ended) {
+      assert.deepEqual(advanceSimulation(crisis.state, crisis.simulation, choiceId), advanceSimulation(resolved.state, resolved.simulation))
+      assert.equal(resolved.state.age, adult.state.age)
+      assert.equal(resolved.simulation.cause, '嘎腰子')
+    } else {
+      assert.throws(() => advanceSimulation(resolved.state, resolved.simulation), /隐藏危机/)
+      assert.throws(() => advanceSimulation(crisis.state, crisis.simulation, choiceId), /隐藏危机/)
+    }
+    assert.deepEqual(crisis, snapshot)
+    crisis = resolved
+  }
+})
+
+test('world context always reflects settled finances, household responsibilities and actual residence', () => {
+  const assertContext = (result: SimulationResult) => assert.deepEqual(result.state.worldContext, {
+    year: result.state.year, location: result.state.config.location, occupation: result.simulation.occupation,
+    education: result.simulation.education, cash: result.simulation.economy.cash, debt: result.simulation.economy.debt,
+    annualIncome: result.simulation.economy.annualIncome, annualExpenses: result.simulation.economy.annualExpenses,
+    dependents: result.state.people.filter(person => /孩子/.test(person.role) && !person.role.endsWith('已离世') && person.age < 18).length,
+  })
+  assertContext(createSimulation({ seed: 1, countryId: 'JPN', birthYear: 2000 }))
+  const base = survivingSeed()
+  const model = base.state.people[0]!
+  const original = { state: { ...base.state, people: [...base.state.people.filter(person => !/孩子/.test(person.role)), { ...model, id: 'young-child', role: '孩子 · 女儿', age: 17 }, { ...model, id: 'adult-child', role: '孩子 · 儿子', age: 18 }, { ...model, id: 'departed-child', role: '孩子 · 女儿 · 已离世', age: 5 }], currentEvent: { ...base.state.currentEvent, choices: [{ id: 'sim:care:treatment', label: '接受治疗', hint: '支付实际治疗费用', effects: { health: 14 } }] } }, simulation: { ...base.simulation, economy: { ...base.simulation.economy, cash: 1e6, debt: 1000 } } }
+  const resolved = resolveSimulationDecision(original.state, original.simulation, 'sim:care:treatment')
+  assertContext(resolved)
+  assert.equal(resolved.state.worldContext?.dependents, 1)
+  assert.ok(resolved.state.worldContext!.annualExpenses > original.simulation.economy.annualExpenses)
+  const next = advanceSimulation(resolved.state, resolved.simulation)
+  assertContext(next)
+  assert.equal(next.state.worldContext?.dependents, 0, 'an eighteen-year-old no longer counts as a dependent')
+  for (const action of ['health', 'study', 'social', 'travel', 'home', 'repay', 'invest'] as const) assertContext(spend(original.simulation, original.state, action, 100, action === 'travel' ? 'IND' : undefined))
+  const travel = spend(original.simulation, original.state, 'travel', 100, 'IND')
+  assert.equal(travel.state.worldContext?.location, '日本', 'a trip does not rewrite residence')
+  const moved = migrate(original.state, original.simulation, 'IND')
+  assertContext(moved)
+  assert.equal(moved.state.worldContext?.location, '印度')
+})
+
+test('world spending causes identify the relationship participant and keep personal activities personal', () => {
+  const base = survivingSeed()
+  const funded = { ...base.simulation, economy: { ...base.simulation.economy, cash: 1e6, debt: 1000 } }
+  const state = { ...base.state, config: { ...base.state.config, intelligence: 100 } }
+  const social = spend(funded, state, 'social', 100)
+  const participant = social.state.people.find(person => person.relationshipHistory?.some(entry => entry.key === `experience:social:${funded.currentCountryId}`))!
+  assert.equal(participant.id, 'friend')
+  const socialThread = social.state.worldThreads?.find(thread => thread.id.startsWith('action-social-'))
+  assert.equal(socialThread?.personId, participant.id)
+  for (const action of ['health', 'study', 'home', 'repay', 'invest'] as const) {
+    const personal = spend(funded, state, action, 100)
+    assert.equal(personal.state.worldThreads?.find(thread => thread.id.startsWith(`action-${action}-`))?.personId, undefined)
+    assert.deepEqual(personal.state.people, state.people)
+  }
 })
