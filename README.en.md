@@ -42,9 +42,13 @@ Copy `.env.example` to `.env.local` and set your own server-side API key, base U
 
 World intelligence adjusts NPC activity, narration and continuing story threads. Without a key, or when a request fails, local simulation and fallback stories remain available.
 
+## Keep and share a life
+
+Preview and download PNG birth or ending cards with a playable link. Save management can remove a backed-up leaf timeline to free a slot while protecting parent branches. If a browser record cannot be read, automatic overwriting pauses so you can keep the original and restore a valid backup.
+
 ## Project status
 
-This is a public preview with a Chinese-language interface. It has 207 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
+This is a public preview with a Chinese-language interface. It has 217 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
 
 Birth conditions use independently sourced population data and weighted DHS surveys where covered; missing countries and fields use documented estimates. Future conditions and special story probabilities are game settings. Outcomes are simulation results, not personal or regional risk predictions.
 

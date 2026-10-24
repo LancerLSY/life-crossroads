@@ -26,6 +26,7 @@ export interface Branch extends Snapshot {
   clock: ClockState
 }
 export interface SaveFile { version: 2; activeBranchId: string; branches: Branch[] }
+export interface LoadSaveResult { save: SaveFile; recovery?: { raw: string; message: string } }
 
 export const STORAGE_KEY = 'otherlife-save-v2'
 export const MAX_SAVE_BYTES = 4_000_000
@@ -120,15 +121,27 @@ export function validSave(value: unknown): value is SaveFile {
   } catch { return false }
 }
 
-export function loadSave(): SaveFile {
+export function loadSaveResult(): LoadSaveResult {
+  let raw: string | null
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw && raw.length <= MAX_SAVE_BYTES && encoder.encode(raw).byteLength <= MAX_SAVE_BYTES) {
-      const parsed: unknown = JSON.parse(raw)
-      if (validSave(parsed)) return parsed
+    raw = localStorage.getItem(STORAGE_KEY)
+  } catch {
+    // Unavailable storage is different from a present save that must be recovered.
+    return { save: initialSave() }
+  }
+  if (raw === null) return { save: initialSave() }
+  try {
+    return { save: parseSave(raw) }
+  } catch (error) {
+    return {
+      save: initialSave(),
+      recovery: { raw, message: error instanceof Error ? error.message : '无法读取原有存档，请先保留原始记录。' },
     }
-  } catch { /* A new newborn save also works when browser storage is unavailable. */ }
-  return initialSave()
+  }
+}
+
+export function loadSave(): SaveFile {
+  return loadSaveResult().save
 }
 
 export function parseSave(raw: string): SaveFile {
@@ -158,7 +171,7 @@ export function parseSave(raw: string): SaveFile {
 function checkCompleteSave(save: SaveFile): void {
   if (!validSave(save)) throw new Error('存档数据不完整，无法保存此更改。')
   // Unlike export, edits and merging must never prune existing rewind points.
-  if (encoder.encode(JSON.stringify(save)).byteLength > MAX_SAVE_BYTES) throw new Error('合并或更名后的存档超过 4 MB，无法保存完整记录。')
+  if (encoder.encode(JSON.stringify(save)).byteLength > MAX_SAVE_BYTES) throw new Error('修改后的存档超过 4 MB，无法保存完整记录。')
 }
 
 export function renameBranch(save: SaveFile, id: string, name: string): SaveFile {
@@ -166,6 +179,24 @@ export function renameBranch(save: SaveFile, id: string, name: string): SaveFile
   if (!trimmed || trimmed.length > 60) throw new Error('时间线名称需为 1 至 60 个字符，不能只包含空白。')
   if (!save.branches.some(branch => branch.id === id)) throw new Error('找不到要更名的时间线。')
   const result = { ...save, branches: save.branches.map(branch => branch.id === id ? { ...branch, name: trimmed } : branch) }
+  checkCompleteSave(result)
+  return result
+}
+
+export function removeBranch(save: SaveFile, id: string): SaveFile {
+  if (!validSave(save)) throw new Error('当前存档不完整，无法移除时间线。')
+  if (!save.branches.some(branch => branch.id === id)) throw new Error('找不到要移除的时间线。')
+  if (save.branches.length === 1) throw new Error('至少需要保留一条时间线，无法移除最后的人生。')
+  if (save.branches.some(branch => branch.parentId === id)) throw new Error('这条时间线还有后续分支，请先移除最末端的未来。')
+  let branches = save.branches.filter(branch => branch.id !== id)
+  let activeBranchId = save.activeBranchId
+  if (activeBranchId === id) {
+    activeBranchId = branches[0].id
+    branches = branches.map(branch => branch.id === activeBranchId
+      ? { ...branch, clock: { ...branch.clock, paused: true, fastForward: false } }
+      : branch)
+  }
+  const result = { ...save, activeBranchId, branches }
   checkCompleteSave(result)
   return result
 }
@@ -221,7 +252,7 @@ export function updateBranch(save: SaveFile, state: GameState, simulation: Simul
 
 export function forkBranch(save: SaveFile, snapshot: Snapshot): SaveFile {
   if (!validSave(save)) throw new Error('当前存档不完整，无法创建时间分支。')
-  if (save.branches.length >= MAX_BRANCHES) throw new Error('已保存 8 条时间线。请先导出存档，再开启新的旅程。')
+  if (save.branches.length >= MAX_BRANCHES) throw new Error('已保存 8 条时间线。请在备份与时间线管理中先备份，再移除不需要的末端未来。')
   const parent = save.branches.find(branch => branch.id === save.activeBranchId)!
   if (!validSnapshot(snapshot) || !sameLife(snapshot, parent) || snapshot.state.year > parent.state.year) throw new Error('请选择这条人生中已经发生的年份。')
   const result = structuredClone({ state: snapshot.state, simulation: snapshot.simulation })

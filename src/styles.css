@@ -552,3 +552,28 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .preview-banner a { color: var(--teal); font-weight: 600; text-underline-offset: 3px; }
 .preview-banner a:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
 @media (max-width: 600px) { .preview-banner { padding: 8px 14px; } }
+
+/* Timeline storage controls belong to the backup dialog. */
+.saved-timeline-list { list-style: none; padding: 0; margin: 12px 0 0; max-height: 280px; overflow-y: auto; border: 1px solid var(--line); scrollbar-width: thin; }
+.saved-timeline-list > li { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px 18px; padding: 12px; }
+.saved-timeline-list > li + li { border-top: 1px dashed var(--line); }
+.saved-timeline-copy { display: grid; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.saved-timeline-copy > span, .saved-timeline-copy > small { color: var(--muted); }
+.saved-timeline-name { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.saved-timeline-active { padding: 0 5px; border: 1px solid var(--line-strong); background: var(--green-soft); color: var(--teal); font-size: 10px; white-space: nowrap; }
+.saved-timeline-copy .saved-timeline-lock { font-size: 10px; }
+.saved-timeline-remove { flex-shrink: 0; min-height: 32px; text-decoration: underline; text-underline-offset: 3px; }
+.timeline-removal-review { margin-top: 14px; padding: 14px; border: 1px solid var(--accent); background: var(--accent-soft); overflow-wrap: anywhere; }
+.timeline-removal-review h4 { margin: 0; font-size: 14px; line-height: 1.7; color: var(--accent); }
+.timeline-removal-review .timeline-removal-identity { margin: 5px 0 12px; font-size: 11px; }
+.timeline-removal-confirm { margin-top: 14px; }
+.timeline-removal-review .save-actions { gap: 8px; }
+.timeline-removal-final { color: var(--accent); border-color: var(--accent); }
+.timeline-removal-final:hover:not(:disabled) { background: var(--surface); border-color: var(--accent); }
+@media (max-width: 420px) {
+  .saved-timeline-list > li { flex-wrap: wrap; }
+  .saved-timeline-copy { flex: 1 1 100%; }
+  .saved-timeline-remove { margin-left: auto; }
+  .timeline-removal-review { padding: 12px; }
+  .timeline-removal-review .secondary-button { white-space: normal; }
+}

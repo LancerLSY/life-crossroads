@@ -3,7 +3,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { advanceSimulation, createSimulation, resolveSimulationDecision, spend } from '../simulation/core.ts'
 import type { SimulationResult } from '../simulation/types.ts'
-import { forkBranch, initialSave, loadSave, MAX_BRANCHES, MAX_SAVE_BYTES, mergeSave, parseSave, renameBranch, serializeSave, STORAGE_KEY, updateBranch, validSave } from './storage.ts'
+import { forkBranch, initialSave, loadSave, loadSaveResult, MAX_BRANCHES, MAX_SAVE_BYTES, mergeSave, parseSave, removeBranch, renameBranch, serializeSave, STORAGE_KEY, updateBranch, validSave } from './storage.ts'
 import type { ClockState, SaveFile, Snapshot } from './storage.ts'
 
 const clock = (): ClockState => ({ fraction: 0, speed: 1, paused: true, autoDecision: false, fastForward: false, focusWeights: {} })
@@ -59,6 +59,58 @@ test('renameBranch trims names, enforces boundaries and preserves all unrelated 
   assert.equal(renameBranch(save, 'root', '人'.repeat(60)).branches[0].name.length, 60)
   for (const name of ['', ' \n\t ', '人'.repeat(61)]) assert.throws(() => renameBranch(save, 'root', name), /1 至 60/)
   assert.throws(() => renameBranch(save, 'missing', '名字'), /找不到/)
+})
+
+test('removing a leaf frees capacity without changing its ancestors or other futures', () => {
+  let save = fixture()
+  for (let i = 1; i < MAX_BRANCHES; i++) {
+    save = forkBranch({ ...save, activeBranchId: 'root' }, save.branches[0])
+  }
+  const before = clone(save)
+  const removedId = save.branches[1].id
+  const reduced = removeBranch(save, removedId)
+  assert.equal(reduced.branches.length, MAX_BRANCHES - 1)
+  assert.equal(reduced.activeBranchId, save.activeBranchId)
+  assert.deepEqual(reduced.branches.map(branch => branch.id), save.branches.filter(branch => branch.id !== removedId).map(branch => branch.id))
+  for (const branch of reduced.branches) assert.equal(branch, save.branches.find(original => original.id === branch.id))
+  assert.ok(validSave(reduced))
+  const fullAgain = forkBranch(reduced, reduced.branches.at(-1)!)
+  assert.equal(fullAgain.branches.length, MAX_BRANCHES)
+  assert.ok(validSave(fullAgain))
+  assert.deepEqual(save, before)
+})
+
+test('removing the active leaf selects the first remaining future and pauses only its clock', () => {
+  let save = forkBranch(fixture(), fixture().branches[0])
+  save = forkBranch(save, save.branches[1])
+  save.branches[0].clock = { fraction: .3, speed: 4, paused: false, autoDecision: true, fastForward: true, focusWeights: { study: .5 } }
+  save.branches[1].clock.paused = false
+  save.branches[1].clock.fastForward = true
+  const before = clone(save)
+  const result = removeBranch(save, save.activeBranchId)
+  assert.equal(result.activeBranchId, 'root')
+  assert.deepEqual(result.branches[0], { ...save.branches[0], clock: { ...save.branches[0].clock, paused: true, fastForward: false } })
+  assert.equal(result.branches[0].state, save.branches[0].state)
+  assert.equal(result.branches[0].simulation, save.branches[0].simulation)
+  assert.equal(result.branches[1], save.branches[1])
+  assert.equal(result.branches[1].parentId, 'root')
+  assert.ok(validSave(result))
+  assert.deepEqual(save, before)
+})
+
+test('branch removal rejects unknown IDs, the last future, parents and incomplete or oversized results', () => {
+  const original = fixture()
+  assert.throws(() => removeBranch(original, 'missing'), /找不到/)
+  assert.throws(() => removeBranch(original, 'root'), /最后|至少|一条/)
+  const family = forkBranch(original, original.branches[0])
+  const before = clone(family)
+  assert.throws(() => removeBranch(family, 'root'), /分支|后续|未来/)
+  assert.deepEqual(family, before)
+  assert.throws(() => removeBranch({ ...family, activeBranchId: 'missing' }, family.branches[1].id), /不完整/)
+  const tooLarge = { ...family, filler: '人'.repeat(1_400_000) }
+  assert.ok(validSave(tooLarge))
+  assert.throws(() => removeBranch(tooLarge, family.branches[1].id), /4 MB/)
+  assert.equal(tooLarge.branches.length, 2)
 })
 
 test('merging same IDs imports independent copies, remaps ancestry and pauses every imported clock', () => {
@@ -293,6 +345,74 @@ test('bounded exported saves round-trip and loadSave rejects invalid or byte-ove
     assert.ok(raw.length < MAX_SAVE_BYTES)
     assert.ok(new TextEncoder().encode(raw).byteLength > MAX_SAVE_BYTES)
     assert.equal(loadSave().branches[0].stage, 'setup')
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
+})
+
+test('loading rejected stored bytes exposes the original raw for recovery without writing over it', () => {
+  const save = fixture()
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  let writes = 0
+  let raw = ''
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => { assert.equal(key, STORAGE_KEY); return raw },
+      setItem: () => { writes++ },
+      removeItem: () => { writes++ },
+      clear: () => { writes++ },
+    },
+  })
+  try {
+    const rejected = [
+      { raw: '{', reason: /JSON/ },
+      { raw: '', reason: /JSON/ },
+      { raw: JSON.stringify({ ...save, filler: '人'.repeat(1_400_000) }), reason: /4 MB/ },
+      { raw: JSON.stringify({ ...save, activeBranchId: 'missing' }), reason: /损坏/ },
+      { raw: JSON.stringify({ ...save, branches: [{ ...save.branches[0], simulation: { ...save.branches[0].simulation, config: { ...save.branches[0].simulation.config, seed: 99 } } }] }), reason: /损坏/ },
+      { raw: JSON.stringify({ ...save, extra: { constructor: {} } }), reason: /不安全/ },
+    ]
+    for (const candidate of rejected) {
+      raw = candidate.raw
+      const result = loadSaveResult()
+      assert.ok(validSave(result.save))
+      assert.equal(result.save.branches[0].stage, 'setup')
+      assert.equal(result.recovery?.raw, candidate.raw)
+      assert.match(result.recovery!.message, candidate.reason)
+      assert.equal(raw, candidate.raw)
+      assert.equal(writes, 0)
+    }
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
+})
+
+test('loading valid stored data keeps its complete state and absent or unavailable storage needs no recovery', () => {
+  const save = progress(fixture(), 2)
+  save.branches[0].clock = { ...save.branches[0].clock, paused: false, fastForward: true }
+  const raw = serializeSave(save)
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  let writes = 0
+  const setItem = () => { writes++ }
+  try {
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => raw, setItem } })
+    assert.deepEqual(loadSaveResult(), { save })
+    assert.deepEqual(loadSave(), save)
+    for (const getItem of [() => null, () => { throw new Error('Storage unavailable') }]) {
+      Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem, setItem } })
+      const result = loadSaveResult()
+      assert.ok(validSave(result.save))
+      assert.equal(result.save.branches[0].stage, 'setup')
+      assert.equal(result.recovery, undefined)
+    }
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, get: () => { throw new Error('Storage denied') } })
+    assert.equal(loadSaveResult().recovery, undefined)
+    Reflect.deleteProperty(globalThis, 'localStorage')
+    assert.ok(validSave(loadSaveResult().save))
+    assert.equal(writes, 0)
   } finally {
     if (previous) Object.defineProperty(globalThis, 'localStorage', previous)
     else Reflect.deleteProperty(globalThis, 'localStorage')

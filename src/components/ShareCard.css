@@ -1,0 +1,16 @@
+.share-life-card { display: grid; justify-items: center; gap: 16px; min-width: 0; }
+.share-life-card__preview { display: block; width: min(100%, 380px); height: auto; border: 1px solid var(--line); border-radius: 3px; background: #ebf0ed; }
+.share-life-card__download { width: min(100%, 380px); text-align: center; }
+.share-life-card__download:hover { text-decoration: none; }
+.share-life-card__status, .share-life-card__error { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 3px; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.share-life-card__status { color: var(--teal); background: var(--green-soft); }
+.share-life-card__error { color: var(--accent); background: var(--accent-soft); }
+.share-life-card__link { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; }
+.share-life-card__link label { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--ink); }
+.share-life-card .share-life-card__link input[readonly] { font-family: var(--mono); font-size: 12px; }
+.share-life-card__copy-status { grid-column: 1 / -1; min-height: 20px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.share-life-card__copy-status.share-life-card__error { color: var(--accent); }
+@media (max-width: 480px) {
+  .share-life-card__link { grid-template-columns: minmax(0, 1fr); }
+  .share-life-card__link .secondary-button { width: 100%; }
+}

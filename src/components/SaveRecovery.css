@@ -1,0 +1,14 @@
+.save-recovery-page { max-width: 720px; margin: 40px auto; padding: 28px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); }
+.recovery-brand { color: var(--accent); font-weight: 700; letter-spacing: .08em; }
+.save-recovery-page h1 { margin: 26px 0 14px; }
+.save-recovery-page h2 { font-size: 17px; margin: 0 0 10px; }
+.save-recovery-page p { line-height: 1.8; }
+.save-recovery-page section { border-top: 1px solid var(--line); padding: 24px 0; }
+.save-recovery-page details { margin-top: 18px; }
+.save-recovery-page summary { cursor: pointer; line-height: 1.7; }
+.save-recovery-page textarea { width: 100%; box-sizing: border-box; margin: 12px 0; padding: 12px; resize: vertical; background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.recovery-reason { padding: 12px; background: var(--accent-soft); border-left: 3px solid var(--accent); overflow-wrap: anywhere; }
+.recovery-file { display: inline-flex; position: relative; cursor: pointer; }
+.recovery-file input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.recovery-reset { padding-top: 18px; border-top: 1px solid var(--line); }
+@media (max-width: 600px) { .save-recovery-page { margin: 16px 12px; padding: 20px; } .save-recovery-page h1 { font-size: 27px; } }
