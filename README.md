@@ -3,6 +3,7 @@
 [立即试玩](https://lancerlsy.github.io/life-crossroads/) · [English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues) · [MIT许可](LICENSE)
 
 [![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
+[![Mentioned in Awesome AI-Built Games](https://awesome.re/mentioned-badge.svg)](https://github.com/lappemic/awesome-ai-built-games#simulation--strategy)
 
 ![人生岔路：出生靠抽签，之后的每一步由你决定。游戏实际像素渲染场景预览。](docs/media/otherlife-cover.png)
 

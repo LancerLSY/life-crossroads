@@ -3,6 +3,7 @@
 [Play preview](https://lancerlsy.github.io/life-crossroads/) · [简体中文](README.md) · [Releases](https://github.com/LancerLSY/life-crossroads/releases) · [Feedback](https://github.com/LancerLSY/life-crossroads/issues)
 
 [![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
+[![Mentioned in Awesome AI-Built Games](https://awesome.re/mentioned-badge.svg)](https://github.com/lappemic/awesome-ai-built-games#simulation--strategy)
 
 ![Otherlife: pixel scene rendered by the game](docs/media/otherlife-cover.png)
 
@@ -44,11 +45,11 @@ World intelligence adjusts NPC activity, narration and continuing story threads.
 
 ## Keep and share a life
 
-Preview and download PNG birth or ending cards with a scannable QR and a readable playable link. Save management can remove a backed-up leaf timeline to free a slot while protecting parent branches. If a browser record cannot be read, automatic overwriting pauses so you can keep the original and restore a valid backup.
+Preview and download PNG birth or ending cards with a scannable QR and a readable playable link. Save management can remove a backed-up leaf timeline to free a slot while protecting parent branches. When another tab saves newer progress, an older tab pauses and offers an export before loading the latest record. If a browser record cannot be read, automatic overwriting pauses so you can keep the original and restore a valid backup.
 
 ## Project status
 
-This is a public preview with a Chinese-language interface. It has 219 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
+This is a public preview with a Chinese-language interface. It has 229 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
 
 Birth conditions use independently sourced population data and weighted DHS surveys where covered; missing countries and fields use documented estimates. Future conditions and special story probabilities are game settings. Outcomes are simulation results, not personal or regional risk predictions.
 
