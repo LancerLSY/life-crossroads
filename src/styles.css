@@ -546,3 +546,9 @@ button { transition: background-color .12s, border-color .12s, color .12s; }
 .world-threads .thread-history time,
 .world-threads .world-recent-facts time { color: var(--muted); font-size: 10px; white-space: nowrap; }
 .world-threads .world-recent-facts { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+
+/* Public preview: clear mode and an optional project link, without blocking play. */
+.preview-banner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 18px; padding: 9px 22px; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--muted); font-size: 11px; line-height: 1.6; }
+.preview-banner a { color: var(--teal); font-weight: 600; text-underline-offset: 3px; }
+.preview-banner a:focus-visible { outline: 2px solid var(--teal); outline-offset: 4px; }
+@media (max-width: 600px) { .preview-banner { padding: 8px 14px; } }

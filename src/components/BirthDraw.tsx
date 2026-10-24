@@ -10,7 +10,7 @@ const TICKETS = [
   { label: '出生地', icon: Globe2 }, { label: '我的身份', icon: UserRound }, { label: '家庭起点', icon: House },
 ]
 function WorldBackdrop() {
-  return <img className="lottery-world-art" src="/assets/birth-world.png" alt="像素地球、星空与世界各地的城镇" width="1536" height="1024" fetchPriority="high"/>
+  return <img className="lottery-world-art" src={`${import.meta.env.BASE_URL}assets/birth-world.png`} alt="像素地球、星空与世界各地的城镇" width="1536" height="1024" fetchPriority="high"/>
 }
 
 export function BirthWelcome({ onCreate, onSettings, hasSaved, onResume, initialIntelligence = 60 }: {

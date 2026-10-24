@@ -1,6 +1,6 @@
 # 人生岔路 · Otherlife
 
-[English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues)
+[立即试玩](https://lancerlsy.github.io/life-crossroads/) · [English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues)
 
 [![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
 
@@ -18,7 +18,7 @@
 
 ![同一条模拟人生在0、6、18、32、70岁时，由游戏渲染器生成的场景变化](docs/media/life-stages.gif)
 
-目前提供本地运行版本。下面几步即可开始，欢迎试跑、Star，或在 Issues 留下你希望遇见的故事。
+**[点开就玩，无需安装 →](https://lancerlsy.github.io/life-crossroads/)** 在线试玩使用本地故事引擎，进度保存在当前浏览器。想接入自己的DeepSeek，可按下方步骤运行完整版本。欢迎Star，或在Issues分享你经历的故事。
 
 程序、叙事、名称和美术为独立实现。基础功能对照见 [功能核对表](docs/parity.md)，本次实际使用官方 **REA 6.7.0** 分析发布程序的像素与时钟流程，证据见 [REA 重建说明](docs/rea-reconstruction.md)。
 
@@ -88,7 +88,7 @@ npm run build
 npm start
 ```
 
-生产环境由同一个 Node 服务提供 `dist/` 和 `/api/*`，默认 http://127.0.0.1:3001 。容器或外部主机设置 `HOST=0.0.0.0`。HTTPS 反向代理须设置 `GAME_PUBLIC_ORIGIN=https://你的域名`。GitHub Pages 无法运行此 Node 后端。
+生产环境由同一个 Node 服务提供 `dist/` 和 `/api/*`，默认 http://127.0.0.1:3001 。容器或外部主机设置 `HOST=0.0.0.0`。HTTPS 反向代理须设置 `GAME_PUBLIC_ORIGIN=https://你的域名`。[公开试玩部署](docs/deployment.md)使用独立的GitHub Pages构建；它运行本地故事，完整模型版使用Node后端。
 
 当前205项测试通过。验证包含像素画布确定性、家庭筛选、年龄和房屋变化、明暗主题、结局画面，以及引擎完整生命周期、概率出生与死亡、资金记账、同年抉择、关系承诺与修复、隐藏支线概率与结局、跨分支存档、时钟中断及模拟 DeepSeek HTTP 测试。已完成配置后的真实DeepSeek对话、承诺识别、世界事件和旅行线索续写验证；其他部署仍需自行配置密钥，仓库不附带密钥。
 

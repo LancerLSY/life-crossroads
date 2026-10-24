@@ -1,6 +1,6 @@
 # Otherlife · 人生岔路
 
-[简体中文](README.md) · [Releases](https://github.com/LancerLSY/life-crossroads/releases) · [Feedback](https://github.com/LancerLSY/life-crossroads/issues)
+[Play preview](https://lancerlsy.github.io/life-crossroads/) · [简体中文](README.md) · [Releases](https://github.com/LancerLSY/life-crossroads/releases) · [Feedback](https://github.com/LancerLSY/life-crossroads/issues)
 
 [![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
 
@@ -21,7 +21,9 @@ Otherlife is a pixel life simulation with a Chinese-language game interface. Sta
 
 ## Run locally
 
-Requires Node.js **22.18 or later**. The current preview is self-hosted; there is no public hosted play link.
+[Play in your browser](https://lancerlsy.github.io/life-crossroads/) with no installation. The hosted preview uses local stories and browser saves. For DeepSeek dialogue and annual NPC assessments, run the full version below with your own key.
+
+Requires Node.js **22.18 or later** for the full version.
 
 ```sh
 git clone https://github.com/LancerLSY/life-crossroads.git

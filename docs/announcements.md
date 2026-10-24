@@ -2,7 +2,7 @@
 
 项目：https://github.com/LancerLSY/life-crossroads
 
-封面：[otherlife-cover.png](media/otherlife-cover.png)；人生阶段动图：[life-stages.gif](media/life-stages.gif)。两者使用游戏实际渲染结果；动图来自同一条模拟人生。当前游戏界面为中文，提供本地运行版本，可自行接入DeepSeek。
+封面：[otherlife-cover.png](media/otherlife-cover.png)；人生阶段动图：[life-stages.gif](media/life-stages.gif)。两者使用游戏实际渲染结果；动图来自同一条模拟人生。当前游戏界面为中文；在线试玩：https://lancerlsy.github.io/life-crossroads/ 。试玩使用本地故事，完整版本可自行接入DeepSeek。
 
 ## 中文短文
 
@@ -13,6 +13,8 @@
 我想让人生里的小事也留下后续：花过的钱、去过的地方、认识的人，以及说出口的承诺，都可能影响之后的关系和故事。答应陪一个人散步，需要真的抽出时间；想知道另一种结果，也可以回到旧选择前，再走一条时间线。
 
 不用模型密钥也能在本地玩，接入自己的DeepSeek后可以和NPC自由聊天，让世界线继续生长。
+
+点开试玩：https://lancerlsy.github.io/life-crossroads/
 
 源码和运行方法：https://github.com/LancerLSY/life-crossroads
 
@@ -30,7 +32,7 @@
 
 画面采用程序绘制的像素场景。婴儿、学生、成年人和长者会有不同外观；家人、住宅与生活状态也会进入画面。你可以暂停、快转，或者回到过去的某个选择前，保留原来的未来，重新展开另一条时间线。
 
-目前是中文界面的本地运行预览版，205项测试通过，桌面和手机布局已检查。出生背景有明确的数据来源和估算说明，特殊剧情的概率单独标为虚构设定。
+目前提供中文界面的在线试玩和完整本地版本，205项测试通过，桌面和手机布局已检查。出生背景有明确的数据来源和估算说明，特殊剧情的概率单独标为虚构设定。
 
 代码、叙事和像素美术独立实现。
 
@@ -48,7 +50,9 @@ I wanted small actions to leave consequences: spending, travel and conversations
 
 The game runs locally without an API key. An optional DeepSeek connection adds NPC dialogue and contextual narration, while local rules control time, money and consequential choices. Pixel scenes change as the protagonist and household age.
 
-The interface is currently in Chinese. This is a self-hosted preview with 205 passing tests, not a hosted web demo.
+The interface is currently in Chinese. A browser preview is available with local stories and browser saves; the full version supports your own DeepSeek key. It has 205 passing tests.
+
+Play: https://lancerlsy.github.io/life-crossroads/
 
 Code and setup: https://github.com/LancerLSY/life-crossroads
 

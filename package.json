@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc -b && vite build",
+    "build:pages": "tsc -b && vite build --mode pages",
+    "preview:pages": "vite preview --mode pages --host 127.0.0.1 --port 4173 --strictPort",
     "start": "node --env-file-if-exists=.env.local server/index.mjs",
     "preview": "npm run build && npm start",
     "typecheck": "tsc -b",

@@ -1,7 +1,12 @@
 import type { ChatReaction, GameState, LifeEvent, RelationshipAssessment, WorldMessage } from '../game/types.ts';
 export interface ApiStatus { configured: boolean; provider: string; model: string; requiresAccessToken: boolean }
 export const DEFAULT_STATUS: ApiStatus = { configured: false, provider: 'DeepSeek', model: 'deepseek-flash', requiresAccessToken: false };
+export const STATIC_PREVIEW = import.meta.env?.MODE === 'pages';
 export async function api<T>(path: string, body?: unknown, token = '', signal?: AbortSignal): Promise<T> {
+  if (STATIC_PREVIEW) {
+    if (path === '/api/status' && body === undefined) return { ...DEFAULT_STATUS } as T;
+    throw new Error('公开试玩使用本地故事。自由模型对话请运行完整版本。');
+  }
   const response = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
     headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
