@@ -1,6 +1,6 @@
 # 人生岔路 · Otherlife
 
-[立即试玩](https://lancerlsy.github.io/life-crossroads/) · [English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues)
+[立即试玩](https://lancerlsy.github.io/life-crossroads/) · [English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues) · [MIT许可](LICENSE)
 
 [![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
 
@@ -104,3 +104,7 @@ npm start
 [美术来源与设计](docs/assets.md) · [基础功能对照](docs/parity.md)
 
 [AI辅助开发说明](docs/ai-assisted-development.md)：本项目大部分实现由Codex按作者的玩法要求辅助生成并迭代；运行时DeepSeek叙事是另一项可选功能。
+
+## 许可
+
+原创代码、文档与作者有权授权的原创美术采用[MIT许可](LICENSE)。第三方数据和依赖保留各自条款，范围与署名见[NOTICE](NOTICE.md)。

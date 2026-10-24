@@ -51,3 +51,7 @@ Birth conditions use independently sourced population data and weighted DHS surv
 Code, narration and art are independently implemented. See the Chinese [feature comparison](docs/parity.md), [data sources](docs/data-sources.md) and [art notes](docs/assets.md) for scope and provenance.
 
 If this direction interests you, try a life, star the repository, or [tell us what happened](https://github.com/LancerLSY/life-crossroads/issues).
+
+## License
+
+Original code, documentation and original artwork the owner can license are available under the [MIT License](LICENSE). Third-party datasets and dependencies retain their own terms; see [NOTICE](NOTICE.md).
