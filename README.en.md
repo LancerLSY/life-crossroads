@@ -8,6 +8,8 @@
 
 **Your birthplace is a draw. Your next steps are yours.**
 
+[AI-assisted development disclosure](docs/ai-assisted-development.md): most of the implementation was written and revised with Codex under the creator's direction. This is separate from the optional DeepSeek gameplay features.
+
 Otherlife is a pixel life simulation with a Chinese-language game interface. Start with a randomly drawn identity, choose a historical, present-day or future setting, and follow a life shaped by relationships, spending, travel and unexpected events.
 
 - **Weighted births across 172 countries and regions.** Reveal your birthplace, identity and family one step at a time.
