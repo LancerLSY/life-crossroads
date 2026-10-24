@@ -1,6 +1,24 @@
 # 人生岔路 · Otherlife
 
-一个从随机出生开始的像素风人生模拟游戏。选择过去、当下或未来的世界，在连续流动的时间里学习、工作、经营关系，经历一段没有固定轨迹的人生。
+[English](README.en.md) · [版本发布](https://github.com/LancerLSY/life-crossroads/releases) · [反馈与建议](https://github.com/LancerLSY/life-crossroads/issues)
+
+[![Verify game](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml/badge.svg)](https://github.com/LancerLSY/life-crossroads/actions/workflows/ci.yml)
+
+![人生岔路：出生靠抽签，之后的每一步由你决定。游戏实际像素渲染场景预览。](docs/media/otherlife-cover.png)
+
+**出生靠抽签，之后的每一步由你决定。**
+
+一个从随机出生开始的像素风人生模拟游戏。选择过去、当下或未来的世界，在连续流动的时间里学习、工作、经营关系。花过的钱、去过的地方、说过的话和做过的承诺，都可能成为后来故事的起点。
+
+- **172个国家与地区的随机出生**：抽取出生地、身份和家庭，逐项揭晓你的人生起点。
+- **有记忆的人物关系**：关心、陪伴、帮助和失约会留下后果；承诺需要实际行动兑现。
+- **会继续发展的世界线**：关系、消费、旅行与迁居影响线索走向；可以回到旧选择前，保留原来的未来，再走一条路。
+- **像素画面随人生变化**：从襁褓到晚年，家人、住宅、工作与结局都会改变场景。
+- **本地可玩，DeepSeek可选**：无需模型密钥即可开始；接通自己的API后，NPC对话和事件叙事会更加丰富。
+
+![同一条模拟人生在0、6、18、32、70岁时，由游戏渲染器生成的场景变化](docs/media/life-stages.gif)
+
+目前提供本地运行版本。下面几步即可开始，欢迎试跑、Star，或在 Issues 留下你希望遇见的故事。
 
 程序、叙事、名称和美术为独立实现。基础功能对照见 [功能核对表](docs/parity.md)，本次实际使用官方 **REA 6.7.0** 分析发布程序的像素与时钟流程，证据见 [REA 重建说明](docs/rea-reconstruction.md)。
 
@@ -9,6 +27,8 @@
 需要 Node.js **22.18 或更新版本**。
 
 ```sh
+git clone https://github.com/LancerLSY/life-crossroads.git
+cd life-crossroads
 npm ci
 npm run dev
 ```
