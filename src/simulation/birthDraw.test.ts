@@ -75,3 +75,29 @@ test('drawn lives begin at birth with valid human attributes and their full fami
   assert.ok(isGameState(state))
   assert.ok(validateSimulation(simulation))
 })
+
+test('teenage parents have age-appropriate narrative occupations without changing the family draw', () => {
+  const { state, simulation: { birth } } = createSimulation({ seed: 89, countryId: 'CHN', birthYear: 2000 })
+
+  assert.equal(state.config.name, '李雨宁')
+  assert.equal(birth.sex, '女')
+  assert.equal(birth.familyQuintile, 4)
+  assert.equal(birth.urban, true)
+  assert.equal(birth.siblings, 1)
+  assert.deepEqual(
+    Object.values(birth.parents).map(parent => ({ name: parent.name, age: parent.age })),
+    [{ name: '赵星月', age: 16 }, { name: '周时安', age: 16 }],
+  )
+  for (const parent of Object.values(birth.parents)) {
+    assert.doesNotMatch(parent.occupation, /教师|医护人员/, `${parent.age}-year-old ${parent.name} cannot be assigned a qualified profession`)
+  }
+})
+
+test('adult parent occupations and downstream name draws retain their seeded results', () => {
+  const { simulation: { birth } } = createSimulation({ seed: 0, countryId: 'CHN', birthYear: 2000 })
+
+  assert.deepEqual(birth.parents, {
+    mother: { name: '林星月', age: 31, occupation: '医护人员' },
+    father: { name: '黄远山', age: 31, occupation: '技术工作者' },
+  })
+})

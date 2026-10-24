@@ -44,7 +44,7 @@ World intelligence adjusts NPC activity, narration and continuing story threads.
 
 ## Project status
 
-This is a public preview with a Chinese-language interface. It has 205 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
+This is a public preview with a Chinese-language interface. It has 207 passing tests plus lint, type checking and a production build. Real DeepSeek dialogue, promises and travel-related stories have been checked, alongside desktop and mobile browser flows.
 
 Birth conditions use independently sourced population data and weighted DHS surveys where covered; missing countries and fields use documented estimates. Future conditions and special story probabilities are game settings. Outcomes are simulation results, not personal or regional risk predictions.
 

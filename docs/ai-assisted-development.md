@@ -6,7 +6,7 @@ AI assistance is part of how the code was built. It is distinct from **DeepSeek*
 
 Original pixel scenes and portraits are produced by the repository's rendering code. The birth-stage background was generated with Image Gen; [art provenance](assets.md) identifies it separately. Launch diagrams are labelled illustrated scenarios rather than UI screenshots or player testimonials.
 
-The public [commit history](https://github.com/LancerLSY/life-crossroads/commits/main/), [architecture](architecture.md), [causal rules](causal-world.md) and tests make the implementation inspectable. The project has 205 passing tests plus lint, type checking and production builds at this release. Browser birth/play/save flows and real DeepSeek continuity/negative-appraisal scenarios have also been checked.
+The public [commit history](https://github.com/LancerLSY/life-crossroads/commits/main/), [architecture](architecture.md), [causal rules](causal-world.md) and tests make the implementation inspectable. The project has 207 passing tests plus lint, type checking and production builds at this release. Browser birth/play/save flows and real DeepSeek continuity/negative-appraisal scenarios have also been checked.
 
 项目的大部分界面、引擎、服务端、像素绘制与测试实现由Codex按作者要求辅助生成和修改。作者负责提出玩法、反馈方向和发布决定。运行时可选的DeepSeek人物对话与年度分析，是与“使用AI辅助编写代码”分开的功能。
 

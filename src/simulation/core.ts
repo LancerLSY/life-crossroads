@@ -92,12 +92,17 @@ function birthRecord(config: FoundationConfig, country: Country): { birth: Birth
   const family = sampleFamily(country.id, config.birthYear, rng(config.seed, 'birth-family'))
   const { familyQuintile, motherAge } = family
   const parentJobs = familyQuintile < 3 ? ['农业劳动者', '店员', '工厂员工', '运输工作者', '服务业员工'] : ['教师', '技术工作者', '医护人员', '小店经营者', '办公室职员']
+  const parentOccupation = (age: number) => {
+    const job = parentJobs[Math.floor(random() * parentJobs.length)]!
+    // A narrative safeguard, not observed employment data; retain the seeded draw.
+    return age < 18 ? '学习与家庭照料' : job
+  }
   const birth: BirthRecord = {
     countryId: country.id, countryName: country.name, sex, familyQuintile,
     familyClass: FAMILY_CLASSES[familyQuintile - 1]!, urban: family.urban,
     parents: {
-      mother: { name: makeName(country.id, '女', random), age: motherAge, occupation: parentJobs[Math.floor(random() * parentJobs.length)]! },
-      father: { name: makeName(country.id, '男', random), age: family.fatherAge, occupation: parentJobs[Math.floor(random() * parentJobs.length)]! },
+      mother: { name: makeName(country.id, '女', random), age: motherAge, occupation: parentOccupation(motherAge) },
+      father: { name: makeName(country.id, '男', random), age: family.fatherAge, occupation: parentOccupation(family.fatherAge) },
     }, siblings: family.siblings, familySampling: family.metadata,
   }
   return { birth, name }
